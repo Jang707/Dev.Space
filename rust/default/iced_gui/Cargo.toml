@@ -1,0 +1,11 @@
+[package]
+name = "iced_gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iced = { version = "0.10", features = ["tokio"] }
+tokio = { version = "1.0", features = ["full"] }
+pyo3 = { version = "0.19", features = ["auto-initialize"] }
+chrono = "0.4"
+lazy_static = "1.4"
