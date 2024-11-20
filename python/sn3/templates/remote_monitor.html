@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HOME CCTV Control and Environment Monitoring</title>
+    <style>
+        .container {
+            text-align: center;
+        }
+        .data-display {
+            text-align: center;
+            font-size: 24px;
+            margin-top: 20px;
+        }
+        .control-table {
+            width: 50%;
+            margin: 0 auto;
+            margin-top: 20px;
+        }
+        .control-table td {
+            border-style: solid;
+            border-color: #000000;
+            text-align: center;
+            color: #FFFFFF;
+            background-color: #FF9900;
+            height: 81px;
+        }
+    </style>
+    <script>
+        function fetchData() {
+            fetch('/get_data')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('temperature').innerText = data.temperature + " °C";
+                    document.getElementById('humidity').innerText = data.humidity + " %";
+                });
+        }
+        setInterval(fetchData, 2000); // Fetch data every 2 seconds
+    </script>
+</head>
+<body>
+    <div class="container">
+        <strong><br>HOME CCTV Control and Environment Monitoring<br><br><br></strong>
+        <table class="control-table">
+            <tr>
+                <td style="width: 25%">
+                    <a href="sg90_control_act?servo=L">&lt;&lt;</a>
+                </td>
+                <td style="width: 50%">
+                    <img src="static/sg90.png" width="80">
+                </td>
+                <td style="width: 25%">
+                    <a href="sg90_control_act?servo=R">&gt;&gt;</a>
+                </td>
+            </tr>
+        </table>
+        <strong><br>Degree is {{ degree }}</strong>
+    </div>
+    <div class="data-display">
+        <h2>Current Temperature and Humidity</h2>
+        <p>Temperature: <span id="temperature">Loading...</span></p>
+        <p>Humidity: <span id="humidity">Loading...</span></p>
+    </div>
+</body>
+</html>

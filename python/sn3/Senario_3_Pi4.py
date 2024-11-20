@@ -5,8 +5,14 @@ from RPLCD.i2c import CharLCD
 import serial
 from threading import Thread, Event
 import socketCommunication
+import json
 
 myIP='192.168.0.4'
+SERVER_IP = '192.168.0.2'
+SERVER_PORT = 12345
+
+# TCP 클라이언트 초기화
+tcp_client = socketCommunication.TCPClient(SERVER_IP, SERVER_PORT)
 
 #### below is TRU-5 = LCD 제어
 ser = serial.Serial('/dev/serial0', 9600, timeout=1)
@@ -46,9 +52,6 @@ def uartRequestToPico():
 
 uart_thread = Thread(target=uartRequestToPico)
 uart_thread.start()
-#### socketCommunication 호출 및 시작 부
-client = socketCommunication.TCPClient()
-client.start()
 
 #### below is TRU-28. 플라스크 활용 웹 인터페이스
 servoPin = 17
@@ -109,10 +112,28 @@ def get_data():
     global temperature, humidity
     return jsonify({'temperature': temperature, 'humidity': humidity})
 
+def get_sensor_data():
+    """소켓으로 전송할 센서 데이터를 포맷팅합니다."""
+    global temperature, humidity, cur_pos
+    data = {
+        'temperature': temperature,
+        'humidity': humidity,
+        'servo_position': cur_pos
+    }
+    return json.dumps(data)
+
 if __name__ == '__main__':
     try:
+        # TCP 클라이언트 시작
+        if tcp_client.start():
+            # 주기적 데이터 전송 시작 (2초 간격)
+            tcp_client.start_periodic_send(get_sensor_data, 2.0)
+        
+        # Flask 서버 시작
         app.run(debug=True, port=10002, host=myIP)
+    
     finally:
         stop_event.set()
         uart_thread.join()
+        tcp_client.close()
         GPIO.cleanup()
