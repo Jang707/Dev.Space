@@ -127,6 +127,7 @@ if __name__ == '__main__':
         # TCP 클라이언트 시작
         if tcp_client.start():
             # 주기적 데이터 전송 시작 (2초 간격)
+            # 전송데이터는 get_sensor_data 를 참조.
             tcp_client.start_periodic_send(get_sensor_data, 2.0)
         
         # Flask 서버 시작
