@@ -132,6 +132,8 @@ if __name__ == '__main__':
         
         # Flask 서버 시작
         app.run(debug=True, port=10002, host=myIP)
+    except Exception as e:
+        print(f"error : {e}")
     
     finally:
         stop_event.set()
