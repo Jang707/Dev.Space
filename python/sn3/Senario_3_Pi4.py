@@ -3,140 +3,317 @@ import RPi.GPIO as GPIO
 import time
 from RPLCD.i2c import CharLCD
 import serial
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 import socketCommunication
 import json
+import logging
+from typing import Optional, Dict, Any
+from dataclasses import dataclass
 
-myIP='192.168.0.4'
-SERVER_IP = '192.168.0.2'
-SERVER_PORT = 12345
+# 로깅 설정 개선
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# TCP 클라이언트 초기화
-tcp_client = socketCommunication.TCPClient(SERVER_IP, SERVER_PORT)
+@dataclass
+class ServoSpecs:
+    """서보 모터 스펙 정의"""
+    MIN_ANGLE: int = 0
+    MAX_ANGLE: int = 180
+    MIN_DUTY: float = 2.5  # 수정된 duty cycle 값
+    MAX_DUTY: float = 12.5  # 수정된 duty cycle 값
+    FREQUENCY: int = 50
+    STEP_DELAY: float = 0.01  # 점진적 이동을 위한 딜레이
 
-#### below is TRU-5 = LCD 제어
-ser = serial.Serial('/dev/serial0', 9600, timeout=1)
-lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1, cols=16, rows=2, dotsize=8)
-lcd.clear()
-connection_status = False # if flask server is connected to client, change to "True"
+class ServoController:
+    def __init__(self, pin: int, specs: Optional[ServoSpecs] = None):
+        self.pin = pin
+        self.specs = specs or ServoSpecs()
+        self.current_angle = 90  # 초기 각도
+        self.lock = Lock()
+        self.initialized = False
+        self.last_error_time = 0
+        self.error_count = 0
+        
+        self._initialize_gpio()
 
-temperature = None
-humidity = None
-stop_event = Event()
-
-def lcd_control(temperature, humidity):
-    global connection_status
-    lcd.clear()
-    if connection_status:
-        lcd.write_string("Online\n")
-    else:
-        lcd.write_string("Offline\n")
-    lcd.write_string(f"Temp:{temperature}C Humid:{humidity}%")
-
-#### 라즈베리파이 피코에게 온습도 측정 센서 데이터 요청 through UART
-def uartRequestToPico():
-    global temperature, humidity
-    while not stop_event.is_set():
+    def _initialize_gpio(self) -> None:
+        """GPIO 및 PWM 초기화"""
         try:
-            if ser.in_waiting > 0:
-                # 데이터 읽기
-                data = ser.readline().decode('utf-8').strip()
-                if data:
-                    temperature, humidity = data.split(',')
-                    print("Temperature: ", temperature)
-                    print("Humidity: ", humidity)
-                    lcd_control(temperature, humidity)
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            GPIO.setup(self.pin, GPIO.OUT)
+            
+            self.pwm = GPIO.PWM(self.pin, self.specs.FREQUENCY)
+            initial_duty = self._angle_to_duty(90)
+            self.pwm.start(initial_duty)
+            time.sleep(0.5)  # 초기화 안정화 대기
+            self.pwm.ChangeDutyCycle(0)  # 떨림 방지
+            
+            self.initialized = True
+            logger.info(f"Servo initialized on pin {self.pin} with {self.specs.FREQUENCY}Hz frequency")
         except Exception as e:
-            print("Error: ", e)
-        time.sleep(2)
+            logger.error(f"Failed to initialize servo: {e}")
+            raise
 
-uart_thread = Thread(target=uartRequestToPico)
-uart_thread.start()
+    def _angle_to_duty(self, angle: float) -> float:
+        """각도를 duty cycle로 변환"""
+        # 각도 범위 제한
+        angle = max(self.specs.MIN_ANGLE, min(self.specs.MAX_ANGLE, angle))
+        
+        # duty cycle 계산
+        duty_range = self.specs.MAX_DUTY - self.specs.MIN_DUTY
+        duty = self.specs.MIN_DUTY + (angle * duty_range / 180.0)
+        return duty
 
-#### below is TRU-28. 플라스크 활용 웹 인터페이스
-servoPin = 17
-SERVO_MAX_DUTY = 12
-SERVO_MIN_DUTY = 3
-cur_pos = 90
+    def _smooth_move(self, target_angle: int) -> bool:
+        """점진적으로 서보 모터 이동"""
+        start_angle = self.current_angle
+        angle_diff = target_angle - start_angle
+        
+        if abs(angle_diff) <= 1:
+            return self._direct_move(target_angle)
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(servoPin, GPIO.OUT)
+        steps = abs(angle_diff)
+        angle_increment = 1 if angle_diff > 0 else -1
 
-servo = GPIO.PWM(servoPin, 50)
-servo.start(0)
+        try:
+            for step in range(steps):
+                current = start_angle + (step * angle_increment)
+                if not self._direct_move(current):
+                    return False
+                time.sleep(self.specs.STEP_DELAY)
+            
+            # 최종 목표 각도로 이동
+            return self._direct_move(target_angle)
+        
+        except Exception as e:
+            logger.error(f"Smooth move failed: {e}")
+            return False
 
-app = Flask(__name__)
+    def _direct_move(self, angle: int) -> bool:
+        """직접 서보 모터 제어"""
+        try:
+            duty = self._angle_to_duty(angle)
+            self.pwm.ChangeDutyCycle(duty)
+            time.sleep(0.1)  # 안정화 대기
+            self.pwm.ChangeDutyCycle(0)  # 떨림 방지
+            return True
+        except Exception as e:
+            logger.error(f"Direct move failed: {e}")
+            return False
 
-def servo_control(degree, delay):
-    if degree > 180:
-        degree = 180
+    def move_to(self, angle: int) -> bool:
+        """서보 모터를 지정된 각도로 이동"""
+        if not self.initialized:
+            logger.error("Servo not initialized")
+            return False
 
-    duty = SERVO_MIN_DUTY + (degree * (SERVO_MAX_DUTY - SERVO_MIN_DUTY) / 180.0)
-    # print("Degree: {} to {}(Duty)".format(degree, duty))
-    servo.ChangeDutyCycle(duty)
-    time.sleep(delay)
-    servo.ChangeDutyCycle(0)
+        with self.lock:
+            try:
+                logger.info(f"Moving servo from {self.current_angle} to {angle} degrees")
+                
+                if self._smooth_move(angle):
+                    self.current_angle = angle
+                    self.error_count = 0
+                    logger.info(f"Servo successfully moved to {angle} degrees")
+                    return True
+                
+                self.error_count += 1
+                current_time = time.time()
+                
+                # 에러가 자주 발생하면 재초기화 시도
+                if self.error_count >= 3 and (current_time - self.last_error_time) < 60:
+                    logger.warning("Multiple servo errors detected, attempting reinitialization")
+                    self._initialize_gpio()
+                    self.error_count = 0
+                
+                self.last_error_time = current_time
+                return False
+                
+            except Exception as e:
+                logger.error(f"Servo control error: {e}")
+                return False
 
-@app.route('/sg90_control')
-def sg90_control():
-    global cur_pos
-    servo_control(cur_pos, 0.1)
-    return render_template('remote_monitor.html', degree=cur_pos)
+    def get_current_angle(self) -> int:
+        """현재 서보 모터 각도 반환"""
+        with self.lock:
+            return self.current_angle
 
-@app.route('/sg90_control_act', methods=['GET'])
-def sg90_control_act():
-    if request.method == 'GET':
-        global cur_pos
-        degree = ''
-        servo = request.args["servo"]
+    def cleanup(self) -> None:
+        """서보 모터 정리"""
+        try:
+            if hasattr(self, 'pwm'):
+                self.pwm.stop()
+            GPIO.cleanup(self.pin)
+            logger.info("Servo cleanup completed")
+        except Exception as e:
+            logger.error(f"Servo cleanup error: {e}")
 
-        if servo == 'L':
-            cur_pos = cur_pos - 10
-            if cur_pos < 0:
-                cur_pos = 0
-        else:
-            cur_pos = cur_pos + 10
-            if cur_pos > 180:
-                cur_pos = 180
+class SensorData:
+    def __init__(self):
+        self.temperature: Optional[float] = None
+        self.humidity: Optional[float] = None
+        self.servo_position: int = 90
+        self.lock = Lock()
+        self.last_update = time.time()
+    
+    def update_sensor_data(self, temperature: Optional[float], humidity: Optional[float]) -> None:
+        with self.lock:
+            self.temperature = temperature
+            self.humidity = humidity
+            self.last_update = time.time()
+    
+    def update_servo_position(self, position: int) -> None:
+        with self.lock:
+            self.servo_position = position
+            self.last_update = time.time()
+    
+    def get_data(self) -> Dict[str, Any]:
+        with self.lock:
+            return {
+                'temperature': self.temperature,
+                'humidity': self.humidity,
+                'servo_position': self.servo_position,
+                'last_update': self.last_update
+            }
 
-        servo_control(cur_pos, 0.1)
-        return render_template('remote_monitor.html', degree=cur_pos)
+class LCDController:
+    def __init__(self):
+        try:
+            self.lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1, cols=16, rows=2, dotsize=8)
+            self.lcd.clear()
+            self.lock = Lock()
+            self.connection_status = False
+        except Exception as e:
+            logger.error(f"Error initializing LCD: {e}")
+            raise
+    
+    def update_display(self, temperature: Optional[float], humidity: Optional[float]):
+        with self.lock:
+            try:
+                self.lcd.clear()
+                status_str = "Online" if self.connection_status else "Offline"
+                self.lcd.write_string(f"{status_str}\n")
+                
+                temp_str = f"{temperature}C" if temperature is not None else "N/A"
+                humid_str = f"{humidity}%" if humidity is not None else "N/A"
+                self.lcd.write_string(f"T:{temp_str} H:{humid_str}")
+            except Exception as e:
+                logger.error(f"Error updating LCD: {e}")
 
-@app.route('/monitor')
-def monitor():
-    global temperature, humidity
-    return render_template('remote_monitor.html', temperature=temperature, humidity=humidity)
+class SensorReader:
+    def __init__(self, serial_port: str = '/dev/serial0', baud_rate: int = 9600):
+        try:
+            self.ser = serial.Serial(serial_port, baud_rate, timeout=1)
+            self.stop_event = Event()
+            self.lock = Lock()
+        except Exception as e:
+            logger.error(f"Error initializing serial port: {e}")
+            raise
+    
+    def read_data(self) -> tuple[Optional[float], Optional[float]]:
+        with self.lock:
+            try:
+                if self.ser.in_waiting > 0:
+                    data = self.ser.readline().decode('utf-8').strip()
+                    if data:
+                        temp, humid = data.split(',')
+                        return float(temp), float(humid)
+            except Exception as e:
+                logger.error(f"Error reading sensor data: {e}")
+            return None, None
 
-@app.route('/get_data', methods=['GET'])
-def get_data():
-    global temperature, humidity
-    return jsonify({'temperature': temperature, 'humidity': humidity})
+def create_app():
+    app = Flask(__name__)
+    sensor_data = SensorData()
+    servo_controller = ServoController(17)  # GPIO 17 사용
+    lcd_controller = LCDController()
+    sensor_reader = SensorReader()
+    
+    # TCP 클라이언트 초기화
+    tcp_client = socketCommunication.TCPClient('192.168.0.2', 12345)
+    
+    def sensor_thread():
+        while not sensor_reader.stop_event.is_set():
+            try:
+                temp, humid = sensor_reader.read_data()
+                sensor_data.update_sensor_data(temp, humid)     ######
+                lcd_controller.update_display(temp, humid)
+                time.sleep(2)
+            except Exception as e:
+                logger.error(f"Error in sensor thread: {e}")
+    
+    @app.route('/sg90_control')
+    def sg90_control():
+        try:
+            current_pos = servo_controller.get_current_angle()
+            success = servo_controller.move_to(current_pos)
+            if not success:
+                logger.error("Failed to control servo")
+                return jsonify({'error': 'Servo control failed'}), 500
+            return render_template('remote_monitor.html', degree=current_pos)
+        except Exception as e:
+            logger.error(f"Error in sg90_control: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/sg90_control_act', methods=['GET'])
+    def sg90_control_act():
+        if request.method == 'GET':
+            try:
+                current_pos = servo_controller.get_current_angle()
+                servo_command = request.args.get("servo", "")
+                
+                if servo_command == 'L':
+                    new_pos = max(0, current_pos - 10)
+                elif servo_command == 'R':
+                    new_pos = min(180, current_pos + 10)
+                else:
+                    return jsonify({'error': 'Invalid servo command'}), 400
 
-def get_sensor_data():
-    """소켓으로 전송할 센서 데이터를 포맷팅합니다."""
-    global temperature, humidity, cur_pos
-    data = {
-        'temperature': temperature,
-        'humidity': humidity,
-        'servo_position': cur_pos
-    }
-    return json.dumps(data)
+                logger.info(f"Attempting to move servo from {current_pos} to {new_pos}")
+                
+                if servo_controller.move_to(new_pos):
+                    sensor_data.update_servo_position(new_pos)
+                    logger.info(f"Servo successfully moved to {new_pos}")
+                    return render_template('remote_monitor.html', degree=new_pos)
+                else:
+                    logger.error("Servo movement failed")
+                    return jsonify({'error': 'Servo movement failed'}), 500
+                    
+            except Exception as e:
+                logger.error(f"Error in sg90_control_act: {e}")
+                return jsonify({'error': str(e)}), 500
+    
+    @app.route('/monitor')
+    def monitor():
+        data = sensor_data.get_data()
+        return render_template('remote_monitor.html', 
+                             temperature=data['temperature'], 
+                             humidity=data['humidity'])
+    
+    @app.route('/get_data', methods=['GET'])
+    def get_data():
+        return jsonify(sensor_data.get_data())
+    
+    # 센서 데이터 읽기 쓰레드 시작
+    sensor_thread = Thread(target=sensor_thread, daemon=True)
+    sensor_thread.start()
+    
+    # TCP 클라이언트 시작
+    if tcp_client.start():
+        tcp_client.start_periodic_send(sensor_data.get_data, 2.0)
+    
+    return app
 
 if __name__ == '__main__':
+    app = create_app()
     try:
-        # TCP 클라이언트 시작
-        if tcp_client.start():
-            # 주기적 데이터 전송 시작 (2초 간격)
-            # 전송데이터는 get_sensor_data 를 참조.
-            tcp_client.start_periodic_send(get_sensor_data, 2.0)
-        
-        # Flask 서버 시작
-        app.run(debug=True, port=10002, host=myIP)
-    except Exception as e:
-        print(f"error : {e}")
-    
+        app.run(debug=False, port=10002, host='192.168.0.4')  # debug=False로 설정하여 reloader 비활성화
+    except KeyboardInterrupt:
+        logger.info("Application shutting down...")
     finally:
-        stop_event.set()
-        uart_thread.join()
-        tcp_client.close()
+        logger.info("Cleaning up resources...")
         GPIO.cleanup()
