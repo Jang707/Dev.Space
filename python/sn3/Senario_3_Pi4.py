@@ -196,10 +196,12 @@ class LCDController:
             try:
                 self.lcd.clear()
                 status_str = "Online" if self.connection_status else "Offline"
+                self.lcd.cursor_pos = (1,0)
                 self.lcd.write_string(f"{status_str}\n")
                 
                 temp_str = f"{temperature}C" if temperature is not None else "N/A"
                 humid_str = f"{humidity}%" if humidity is not None else "N/A"
+                self.lcd.cursor_pos = (2,0)
                 self.lcd.write_string(f"T:{temp_str} H:{humid_str}")
             except Exception as e:
                 logger.error(f"Error updating LCD: {e}")
