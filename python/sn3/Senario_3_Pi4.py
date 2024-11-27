@@ -201,7 +201,6 @@ class LCDController:
                 
                 temp_str = f"{temperature}C" if temperature is not None else "N/A"
                 humid_str = f"{humidity}%" if humidity is not None else "N/A"
-                self.lcd.cursor_pos = (2,0)
                 self.lcd.write_string(f"T:{temp_str} H:{humid_str}")
             except Exception as e:
                 logger.error(f"Error updating LCD: {e}")
@@ -212,6 +211,7 @@ class SensorReader:
             self.ser = serial.Serial(serial_port, baud_rate, timeout=1)
             self.stop_event = Event()
             self.lock = Lock()
+            self.serial_port = serial_port
         except Exception as e:
             logger.error(f"Error initializing serial port: {e}")
             raise
@@ -227,14 +227,26 @@ class SensorReader:
             except Exception as e:
                 logger.error(f"Error reading sensor data: {e}")
             return None, None
+        
+    def cleanup(self):
+        """Cleanup serial port resources"""
+        try:
+            with self.lock:
+                if hasattr(self, 'ser') and self.ser.is_open:
+                    self.ser.flush()
+                    self.ser.close()
+                    logger.info(f"Serial port {self.serial_port} closed successfully")
+        except Exception as e:
+            logger.error(f"Error during serial port cleanup : {e}")
 
 def create_app():
     app = Flask(__name__)
     sensor_data = SensorData()
     servo_controller = ServoController(17)  # GPIO 17 사용
     lcd_controller = LCDController()
+    global sensor_reader
     sensor_reader = SensorReader()
-    
+
     # TCP 클라이언트 초기화
     tcp_client = socketCommunication.TCPClient('192.168.0.2', 12345)
     
@@ -318,4 +330,6 @@ if __name__ == '__main__':
         logger.info("Application shutting down...")
     finally:
         logger.info("Cleaning up resources...")
+        if 'sensor_reader' in globals():
+            sensor_reader.cleanup()
         GPIO.cleanup()
