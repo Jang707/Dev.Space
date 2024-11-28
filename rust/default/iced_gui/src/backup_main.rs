@@ -1,46 +1,10 @@
 use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{executor, Application, Command, Element, Length, Subscription, Theme, Color};
+use iced::{executor, Element, Length, Command, Application, Theme, Subscription};
 use chrono::Local;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-
-// Custom color palette for dark theme
-mod theme {
-    use super::*;
-    
-    pub const BACKGROUND: Color = Color::from_rgb(
-        0x2E as f32 / 255.0,
-        0x34 as f32 / 255.0,
-        0x40 as f32 / 255.0,
-    );
-    pub const SURFACE: Color = Color::from_rgb(
-        0x3B as f32 / 255.0,
-        0x42 as f32 / 255.0,
-        0x4F as f32 / 255.0,
-    );
-    pub const ACCENT: Color = Color::from_rgb(
-        0x5E as f32 / 255.0,
-        0x81 as f32 / 255.0,
-        0xAC as f32 / 255.0,
-    );
-    pub const TEXT: Color = Color::from_rgb(
-        0xEC as f32 / 255.0,
-        0xEF as f32 / 255.0,
-        0xF4 as f32 / 255.0,
-    );
-    pub const SUCCESS: Color = Color::from_rgb(
-        0xA3 as f32 / 255.0,
-        0xBE as f32 / 255.0,
-        0x8C as f32 / 255.0,
-    );
-    pub const ERROR: Color = Color::from_rgb(
-        0xBF as f32 / 255.0,
-        0x61 as f32 / 255.0,
-        0x6A as f32 / 255.0,
-    );
-}
 
 lazy_static::lazy_static! {
     static ref SENDER: Arc<Mutex<Option<mpsc::Sender<String>>>> = Arc::new(Mutex::new(None));
@@ -53,20 +17,12 @@ pub fn main() -> iced::Result {
         *sender_ref = Some(sender);
     }
 
-    MonitoringGui::run(iced::Settings {
-        window: iced::window::Settings {
-            size: (800, 600),
-            position: iced::window::Position::Centered,
-            min_size: Some((400, 300)),
-            ..Default::default()
-        },
-        ..iced::Settings::with_flags(receiver)
-    })
+    MonitoringGui::run(iced::Settings::with_flags(receiver))
 }
 
 #[derive(Debug)]
 struct ScrollState {
-    viewport: Option<scrollable::Viewport>,
+    viewport: Option<scrollable::Viewport>,  // Option으로 변경
     scrolled_to_bottom: bool,
 }
 
@@ -170,6 +126,7 @@ impl Application for MonitoringGui {
                     self.log_messages.push(data);
                     received = true;
                     
+                    // 로그 메시지가 1000개를 초과하면 가장 오래된 메시지를 제거
                     while self.log_messages.len() > 1000 {
                         self.log_messages.remove(0);
                     }
@@ -187,8 +144,10 @@ impl Application for MonitoringGui {
                 Command::none()
             }
             Message::AutoScroll => {
+                // 새 메시지가 추가되었을 때 자동 스크롤
                 if self.scroll_state.scrolled_to_bottom {
                     if let Some(_) = &self.scroll_state.viewport {
+                        // 현재 뷰포트의 상태를 유지하면서 스크롤
                         self.scroll_state.scrolled_to_bottom = true;
                     }
                 }
@@ -198,34 +157,22 @@ impl Application for MonitoringGui {
     }
 
     fn view(&self) -> Element<Message> {
-        // Button styles
-        let button_style = |label: &str| {
-            button(
-                text(label)
-                    .size(16)
-                    .style(theme::TEXT)
-            )
-            .padding([8, 16])
-            .style(iced::theme::Button::Custom(Box::new(CustomButton)))
-        };
-
-        // Button row with enhanced styling
+        // 버튼 영역
         let button_row = row![
-            button_style("Normal Creation").on_press(Message::NormalCreation),
-            button_style("Abnormal Creation").on_press(Message::AbnormalCreation),
+            button("Normal Creation").on_press(Message::NormalCreation),
+            button("Abnormal Creation").on_press(Message::AbnormalCreation),
         ]
-        .spacing(15)
-        .padding(20);
+        .spacing(10);
 
-        // Status indicators with enhanced styling
-        let status_size = 24;
+        // 상태 표시등
+        let status_size = 20;
         let normal_indicator = container(text(""))
             .width(Length::Fixed(status_size as f32))
             .height(Length::Fixed(status_size as f32))
             .style(if self.is_normal {
                 iced::theme::Container::Custom(Box::new(GreenIndicator))
             } else {
-                iced::theme::Container::Custom(Box::new(InactiveIndicator))
+                iced::theme::Container::Transparent
             });
 
         let abnormal_indicator = container(text(""))
@@ -234,35 +181,25 @@ impl Application for MonitoringGui {
             .style(if !self.is_normal {
                 iced::theme::Container::Custom(Box::new(RedIndicator))
             } else {
-                iced::theme::Container::Custom(Box::new(InactiveIndicator))
+                iced::theme::Container::Transparent
             });
 
-        let status_row = row![
-            text("Status:").style(theme::TEXT),
-            normal_indicator,
-            abnormal_indicator
-        ]
-        .spacing(10)
-        .padding(20);
+        let status_row = row![normal_indicator, abnormal_indicator].spacing(5);
 
-        // Monitoring area with enhanced styling
+        // 모니터링 영역
         let log_content = column(
             self.log_messages
                 .iter()
                 .map(|message| {
-                    container(
-                        text(message)
-                            .size(14)
-                            .style(theme::TEXT)
-                    )
-                    .width(Length::Fill)
-                    .padding(4)
-                    .style(iced::theme::Container::Custom(Box::new(LogEntry)))
-                    .into()
+                    container(text(message).size(14))
+                        .width(Length::Fill)
+                        .padding(2)
+                        .style(iced::theme::Container::Transparent)
+                        .into()
                 })
                 .collect()
         )
-        .spacing(2)
+        .spacing(0)
         .width(Length::Fill);
 
         let monitoring_area = scrollable(
@@ -271,11 +208,11 @@ impl Application for MonitoringGui {
                 .padding(10)
                 .style(iced::theme::Container::Custom(Box::new(MonitoringArea)))
         )
-        .height(Length::Fixed(400.0))
+        .height(Length::Fixed(300.0))
         .on_scroll(Message::Scrolled)
-        .id(scrollable::Id::new("log_scroll"));
+        .id(scrollable::Id::new("log_scroll")); // 스크롤 ID 추가
 
-        let content = column![
+        let mut content = column![
             button_row,
             status_row,
             monitoring_area,
@@ -283,11 +220,15 @@ impl Application for MonitoringGui {
         .padding(20)
         .spacing(10);
 
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(iced::theme::Container::Custom(Box::new(DarkContainer)))
-            .into()
+        // 자동 스크롤이 활성화되어 있으면 스크롤을 최하단으로
+        if self.scroll_state.scrolled_to_bottom {
+            content = content.push(iced::widget::Space::new(
+                Length::Shrink,
+                Length::Fixed(0.0),
+            ));
+        }
+
+        content.into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -302,49 +243,18 @@ impl Application for MonitoringGui {
     }
 }
 
-// Style implementations
-struct CustomButton;
+// 스타일 구현
 struct GreenIndicator;
 struct RedIndicator;
-struct InactiveIndicator;
 struct MonitoringArea;
-struct DarkContainer;
-struct LogEntry;
-
-impl button::StyleSheet for CustomButton {
-    type Style = Theme;
-
-    fn active(&self, _style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            background: Some(iced::Background::Color(theme::ACCENT)),
-            border_radius: 6.0.into(),
-            border_width: 0.0,
-            border_color: Color::TRANSPARENT,
-            text_color: theme::TEXT,
-            shadow_offset: iced::Vector::new(0.0, 2.0),
-            ..Default::default()
-        }
-    }
-
-    fn hovered(&self, style: &Self::Style) -> button::Appearance {
-        let mut active = self.active(style);
-        // Instead of using lighten(), use a slightly modified color
-        let hovered_color = Color {a: theme::ACCENT.a, ..theme::ACCENT };
-        active.background = Some(iced::Background::Color(hovered_color));
-        active.shadow_offset = iced::Vector::new(0.0, 3.0);
-        active
-    }
-}
 
 impl container::StyleSheet for GreenIndicator {
     type Style = Theme;
 
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(iced::Background::Color(theme::SUCCESS)),
-            border_radius: 12.0.into(),
-            border_width: 2.0,
-            border_color: theme::SUCCESS, // use the same color without darkening
+            background: Some(iced::Background::Color([0.0, 1.0, 0.0].into())),
+            border_radius: 2.0.into(),
             ..Default::default()
         }
     }
@@ -355,24 +265,8 @@ impl container::StyleSheet for RedIndicator {
 
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(iced::Background::Color(theme::ERROR)),
-            border_radius: 12.0.into(),
-            border_width: 2.0,
-            border_color: theme::ERROR, // use the same color without darkening
-            ..Default::default()
-        }
-    }
-}
-
-impl container::StyleSheet for InactiveIndicator {
-    type Style = Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(iced::Background::Color(theme::SURFACE)),
-            border_radius: 12.0.into(),
-            border_width: 2.0,
-            border_color: theme::SURFACE, // Use the same color without darkening
+            background: Some(iced::Background::Color([1.0, 0.0, 0.0].into())),
+            border_radius: 2.0.into(),
             ..Default::default()
         }
     }
@@ -383,33 +277,10 @@ impl container::StyleSheet for MonitoringArea {
 
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(iced::Background::Color(theme::SURFACE)),
             border_width: 1.0,
-            border_color: theme::ACCENT, 
-            border_radius: 8.0.into(),
-            ..Default::default()
-        }
-    }
-}
-
-impl container::StyleSheet for DarkContainer {
-    type Style = Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            background: Some(iced::Background::Color(theme::BACKGROUND)),
-            text_color: Some(theme::TEXT),
-            ..Default::default()
-        }
-    }
-}
-
-impl container::StyleSheet for LogEntry {
-    type Style = Theme;
-
-    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            text_color: Some(theme::TEXT),
+            border_color: [0.8, 0.8, 0.8].into(),
+            background: Some(iced::Background::Color([1.0, 1.0, 1.0].into())),
+            border_radius: 4.0.into(),
             ..Default::default()
         }
     }
