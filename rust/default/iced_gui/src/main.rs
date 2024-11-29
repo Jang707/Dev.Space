@@ -1,10 +1,21 @@
+#![allow(non_ascii_idents)]
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{executor, Application, Command, Element, Length, Subscription, Theme, Color};
+use iced::Font;
+// erase alignment when You don't need to align text to center.
+//use iced::alignment;
 use chrono::Local;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+
+// Korean Font define
+//const NOTO_SERIF_KR: Font = Font::External{
+    //name: "NotoSanserifKR",
+    //bytes: include_bytes!("../fonts/NotoSerifKR-Regular.ttf")
+//};
+const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
 // Custom color palette for dark theme
 mod theme {
@@ -198,6 +209,40 @@ impl Application for MonitoringGui {
     }
 
     fn view(&self) -> Element<Message> {
+        let korean_font = Font::with_name("Malgun Gothic");
+
+        // Title and subtitle texts
+        let header = column ![
+            text("TRUST-IOT  Ver.1.0")
+            .size(24)
+            .font(korean_font)
+            .style(iced::theme::Text::Color(theme::TEXT))
+            .width(Length::Fill),
+            //.horizontal_alignment(alignment::Horizontal::Center),            
+        // subtitle of our R&D Project's name with smaller font
+        text("사이버 위협의 선제적 대응을 위한 ICS 보안 취약점 분석 기반")
+            .size(10)
+            .font(korean_font)
+            .style(iced::theme::Text::Color(theme::TEXT))
+            .width(Length::Fill),
+            //.horizontal_alignment(alignment::Horizontal::Center),                        
+        text("지능형 위협예측과 시뮬레이션 위협검증 수행의 ICS 보안 취약점 분석관리")
+            .size(10)
+            .font(korean_font)
+            .style(iced::theme::Text::Color(theme::TEXT))
+            .width(Length::Fill),
+            //.horizontal_alignment(alignment::Horizontal::Center),
+        // Solution Title
+        text("ICS 보안 취약점 분석예측 솔루션")
+            .size(18)
+            .font(korean_font)
+            .style(iced::theme::Text::Color(theme::TEXT))
+            .width(Length::Fill),
+            //.horizontal_alignment(alignment::Horizontal::Center),            
+        ]
+        .spacing(5)
+        .padding(20);
+
         // Button styles
         let button_style = |label: &str| {
             button(
@@ -276,6 +321,7 @@ impl Application for MonitoringGui {
         .id(scrollable::Id::new("log_scroll"));
 
         let content = column![
+            header,
             button_row,
             status_row,
             monitoring_area,
