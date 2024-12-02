@@ -10,11 +10,7 @@ use pyo3::types::PyTuple;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-// Korean Font define
-//const NOTO_SERIF_KR: Font = Font::External{
-    //name: "NotoSanserifKR",
-    //bytes: include_bytes!("../fonts/NotoSerifKR-Regular.ttf")
-//};
+// This is used to diaplay Korean.
 const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
 // Custom color palette for dark theme
@@ -96,6 +92,8 @@ struct MonitoringGui {
     python_server: Option<PyObject>,
     receiver: mpsc::Receiver<String>,
     scroll_state: ScrollState,
+    // Controls whether log messages automatically scroll to bottom.
+    auto_scroll: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +103,8 @@ enum Message {
     CheckIncoming,
     Scrolled(scrollable::Viewport),
     AutoScroll,
+    // added for toggle scroll
+    ToggleAutoScroll,
 }
 
 #[pyfunction]
@@ -131,6 +131,7 @@ impl Application for MonitoringGui {
             python_server: None,
             receiver,
             scroll_state: ScrollState::default(),
+            auto_scroll: true,
         };
 
         Python::with_gil(|py| {
@@ -194,8 +195,21 @@ impl Application for MonitoringGui {
             }
             Message::Scrolled(viewport) => {
                 self.scroll_state.viewport = Some(viewport);
-                self.scroll_state.scrolled_to_bottom = viewport.relative_offset().y > 0.99;
+                if self.auto_scroll{
+                    self.scroll_state.scrolled_to_bottom = true;
+                } else {
+                    self.scroll_state.scrolled_to_bottom = viewport.relative_offset().y > 0.99;
+                }
                 Command::none()
+            }
+            Message::ToggleAutoScroll => {
+                self.auto_scroll = !self.auto_scroll;
+                if self.auto_scroll{
+                    self.scroll_state.scrolled_to_bottom = true;
+                    Command::perform(async {}, |_| Message::AutoScroll)
+                } else {
+                    Command::none()
+                }
             }
             Message::AutoScroll => {
                 if self.scroll_state.scrolled_to_bottom {
@@ -258,6 +272,8 @@ impl Application for MonitoringGui {
         let button_row = row![
             button_style("Normal Creation").on_press(Message::NormalCreation),
             button_style("Abnormal Creation").on_press(Message::AbnormalCreation),
+            button_style(if self.auto_scroll {"Auto Scroll: ON"} else {"Auto Scroll: OFF"})
+                .on_press(Message::ToggleAutoScroll),
         ]
         .spacing(15)
         .padding(20);
