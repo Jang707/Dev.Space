@@ -281,9 +281,9 @@ def create_app():
                 servo_command = request.args.get("servo", "")
                 
                 if servo_command == 'L':
-                    new_pos = max(0, current_pos - 10)
+                    new_pos = max(0, current_pos - 30)
                 elif servo_command == 'R':
-                    new_pos = min(180, current_pos + 10)
+                    new_pos = min(180, current_pos + 30)
                 else:
                     return jsonify({'error': 'Invalid servo command'}), 400
 
