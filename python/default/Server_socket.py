@@ -4,6 +4,65 @@ import time
 from threading import Thread
 from typing import Callable, Optional
 
+import serial
+class SerialHandler:
+    def __init__(self, port='COM4', baudrate=9600):
+        self.port = port
+        self.baudrate = baudrate
+        self.serial_connection = None
+        self.is_running = False
+        self.serial_thread = None
+        self.data_callback = None
+        
+    def set_callback(self, callback):
+        self.data_callback = callback
+        self._log_to_callback("[Serial] Callback function registered")
+    
+    def _log_to_callback(self, message):
+        if self.data_callback:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            formatted_message = f"[{timestamp}] {message}"
+            self.data_callback(formatted_message)
+            
+    def serial_loop(self):
+        try:
+            with serial.Serial(self.port, self.baudrate, timeout=1) as self.serial_connection:
+                self._log_to_callback(f"[Serial] Connected to {self.port} at {self.baudrate} baud")
+                
+                while self.is_running:
+                    if self.serial_connection.in_waiting > 0:
+                        data = self.serial_connection.readline().decode('utf-8').strip()
+                        self._log_to_callback(f"[Serial] Received: {data}")
+                        
+        except serial.SerialException as e:
+            self._log_to_callback(f"[Serial] Error: {e}")
+            
+    def start(self):
+        if self.is_running:
+            self._log_to_callback("[Serial] Serial connection is already running")
+            return False
+            
+        self.is_running = True
+        self.serial_thread = Thread(target=self.serial_loop)
+        self.serial_thread.daemon = True
+        self.serial_thread.start()
+        return True
+        
+    def stop(self):
+        self._log_to_callback("[Serial] Stopping serial connection...")
+        self.is_running = False
+        
+        if self.serial_connection:
+            try:
+                self.serial_connection.close()
+            except Exception as e:
+                self._log_to_callback(f"[Serial] Error while closing serial connection: {e}")
+                
+        if self.serial_thread and self.serial_thread.is_alive():
+            self.serial_thread.join(timeout=5.0)
+            
+        self._log_to_callback("[Serial] Serial connection stopped")
+
 class TCPServer:
     def __init__(self, host: str = '192.168.0.2', port: int = 12345):
         self.host = host
@@ -13,6 +72,7 @@ class TCPServer:
         self.server_thread: Optional[Thread] = None
         self.data_callback: Optional[Callable[[str], None]] = None
         self._log_to_callback("[Server] Initializing server on {host}:{port}")
+        self.serial_handler = SerialHandler()   # Serial Handler 인스턴스 생성
     
     def _log_to_callback(self, message: str) -> None:
         """로그 메시지를 callback을 통해 GUI로 전송"""
@@ -24,6 +84,7 @@ class TCPServer:
     def set_callback(self, callback: Callable[[str], None]) -> None:
         self.data_callback = callback
         self._log_to_callback("[Server] Callback function registered")
+        self.serial_handler.set_callback(callback)
 
     def setup_server(self) -> bool:
         try:
@@ -93,6 +154,8 @@ class TCPServer:
         self.server_thread.daemon = True
         self.server_thread.start()
         self._log_to_callback("[Server] Server started")
+        
+        self.serial_handler.start()
         return True
 
     def stop(self) -> None:

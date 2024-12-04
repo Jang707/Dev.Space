@@ -2,15 +2,12 @@
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{executor, Application, Command, Element, Length, Subscription, Theme, Color};
 use iced::Font;
-// erase alignment when You don't need to align text to center.
-//use iced::alignment;
 use chrono::Local;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-// This is used to diaplay Korean.
 const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
 // Custom color palette for dark theme
@@ -46,6 +43,11 @@ mod theme {
         0xBF as f32 / 255.0,
         0x61 as f32 / 255.0,
         0x6A as f32 / 255.0,
+    );
+    pub const SERIAL: Color = Color::from_rgb(
+        0x81 as f32 / 255.0,
+        0xA1 as f32 / 255.0,
+        0xC1 as f32 / 255.0,
     );
 }
 
@@ -86,13 +88,25 @@ impl Default for ScrollState {
     }
 }
 
+#[derive(Debug, Clone)]
+enum LogType {
+    Normal,
+    Serial,
+    TCP,
+}
+
+#[derive(Debug, Clone)]
+struct LogMessage {
+    content: String,
+    log_type: LogType,
+}
+
 struct MonitoringGui {
-    log_messages: Vec<String>,
+    log_messages: Vec<LogMessage>,
     is_normal: bool,
     python_server: Option<PyObject>,
     receiver: mpsc::Receiver<String>,
     scroll_state: ScrollState,
-    // Controls whether log messages automatically scroll to bottom.
     auto_scroll: bool,
 }
 
@@ -103,7 +117,6 @@ enum Message {
     CheckIncoming,
     Scrolled(scrollable::Viewport),
     AutoScroll,
-    // added for toggle scroll
     ToggleAutoScroll,
 }
 
@@ -118,6 +131,18 @@ fn py_callback(data: String) {
     }
 }
 
+impl MonitoringGui {
+    fn parse_log_type(message: &str) -> LogType {
+        if message.contains("[Serial]") {
+            LogType::Serial
+        } else if message.contains("[Server]") {
+            LogType::TCP
+        } else {
+            LogType::Normal
+        }
+    }
+}
+
 impl Application for MonitoringGui {
     type Message = Message;
     type Theme = Theme;
@@ -126,7 +151,10 @@ impl Application for MonitoringGui {
 
     fn new(receiver: Self::Flags) -> (Self, Command<Message>) {
         let instance = Self {
-            log_messages: vec![String::from("Application started")],
+            log_messages: vec![LogMessage { 
+                content: String::from("Application started"),
+                log_type: LogType::Normal
+            }],
             is_normal: true,
             python_server: None,
             receiver,
@@ -136,7 +164,7 @@ impl Application for MonitoringGui {
 
         Python::with_gil(|py| {
             let sys = py.import("sys")?;
-            let path: &PyTuple = PyTuple::new(py, &["D:/senario/python/default"]);
+            let path: &PyTuple = PyTuple::new(py, &["D:/Dev.Space/python/default"]);
             sys.getattr("path")?.call_method1("append", path)?;
 
             let server_module = py.import("Server_socket")?;
@@ -160,18 +188,20 @@ impl Application for MonitoringGui {
         match message {
             Message::NormalCreation => {
                 let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
-                self.log_messages.push(
-                    format!("{} Normal Creation button is pressed.", current_time)
-                );
+                self.log_messages.push(LogMessage {
+                    content: format!("{} Normal Creation button is pressed.", current_time),
+                    log_type: LogType::Normal
+                });
                 self.is_normal = true;
                 self.scroll_state.scrolled_to_bottom = true;
                 Command::perform(async {}, |_| Message::AutoScroll)
             }
             Message::AbnormalCreation => {
                 let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
-                self.log_messages.push(
-                    format!("{} Abnormal Creation button is pressed.", current_time)
-                );
+                self.log_messages.push(LogMessage {
+                    content: format!("{} Abnormal Creation button is pressed.", current_time),
+                    log_type: LogType::Normal
+                });
                 self.is_normal = false;
                 self.scroll_state.scrolled_to_bottom = true;
                 Command::perform(async {}, |_| Message::AutoScroll)
@@ -179,7 +209,10 @@ impl Application for MonitoringGui {
             Message::CheckIncoming => {
                 let mut received = false;
                 while let Ok(data) = self.receiver.try_recv() {
-                    self.log_messages.push(data);
+                    self.log_messages.push(LogMessage {
+                        content: data.clone(),
+                        log_type: Self::parse_log_type(&data)
+                    });
                     received = true;
                     
                     while self.log_messages.len() > 1000 {
@@ -195,7 +228,7 @@ impl Application for MonitoringGui {
             }
             Message::Scrolled(viewport) => {
                 self.scroll_state.viewport = Some(viewport);
-                if self.auto_scroll{
+                if self.auto_scroll {
                     self.scroll_state.scrolled_to_bottom = true;
                 } else {
                     self.scroll_state.scrolled_to_bottom = viewport.relative_offset().y > 0.99;
@@ -204,7 +237,7 @@ impl Application for MonitoringGui {
             }
             Message::ToggleAutoScroll => {
                 self.auto_scroll = !self.auto_scroll;
-                if self.auto_scroll{
+                if self.auto_scroll {
                     self.scroll_state.scrolled_to_bottom = true;
                     Command::perform(async {}, |_| Message::AutoScroll)
                 } else {
@@ -225,39 +258,31 @@ impl Application for MonitoringGui {
     fn view(&self) -> Element<Message> {
         let korean_font = Font::with_name("Malgun Gothic");
 
-        // Title and subtitle texts
-        let header = column ![
+        let header = column![
             text("TRUST-IOT  Ver.1.0")
-            .size(24)
-            .font(korean_font)
-            .style(iced::theme::Text::Color(theme::TEXT))
-            .width(Length::Fill),
-            //.horizontal_alignment(alignment::Horizontal::Center),            
-        // subtitle of our R&D Project's name with smaller font
-        text("사이버 위협의 선제적 대응을 위한 ICS 보안 취약점 분석 기반")
-            .size(10)
-            .font(korean_font)
-            .style(iced::theme::Text::Color(theme::TEXT))
-            .width(Length::Fill),
-            //.horizontal_alignment(alignment::Horizontal::Center),                        
-        text("지능형 위협예측과 시뮬레이션 위협검증 수행의 ICS 보안 취약점 분석관리")
-            .size(10)
-            .font(korean_font)
-            .style(iced::theme::Text::Color(theme::TEXT))
-            .width(Length::Fill),
-            //.horizontal_alignment(alignment::Horizontal::Center),
-        // Solution Title
-        text("ICS 보안 취약점 분석예측 솔루션")
-            .size(18)
-            .font(korean_font)
-            .style(iced::theme::Text::Color(theme::TEXT))
-            .width(Length::Fill),
-            //.horizontal_alignment(alignment::Horizontal::Center),            
+                .size(24)
+                .font(korean_font)
+                .style(iced::theme::Text::Color(theme::TEXT))
+                .width(Length::Fill),
+            text("사이버 위협의 선제적 대응을 위한 ICS 보안 취약점 분석 기반")
+                .size(10)
+                .font(korean_font)
+                .style(iced::theme::Text::Color(theme::TEXT))
+                .width(Length::Fill),
+            text("지능형 위협예측과 시뮬레이션 위협검증 수행의 ICS 보안 취약점 분석관리")
+                .size(10)
+                .font(korean_font)
+                .style(iced::theme::Text::Color(theme::TEXT))
+                .width(Length::Fill),
+            text("ICS 보안 취약점 분석예측 솔루션")
+                .size(18)
+                .font(korean_font)
+                .style(iced::theme::Text::Color(theme::TEXT))
+                .width(Length::Fill),
         ]
         .spacing(5)
         .padding(20);
 
-        // Button styles
         let button_style = |label: &str| {
             button(
                 text(label)
@@ -268,7 +293,6 @@ impl Application for MonitoringGui {
             .style(iced::theme::Button::Custom(Box::new(CustomButton)))
         };
 
-        // Button row with enhanced styling
         let button_row = row![
             button_style("Normal Creation").on_press(Message::NormalCreation),
             button_style("Abnormal Creation").on_press(Message::AbnormalCreation),
@@ -278,7 +302,6 @@ impl Application for MonitoringGui {
         .spacing(15)
         .padding(20);
 
-        // Status indicators with enhanced styling
         let status_size = 24;
         let normal_indicator = container(text(""))
             .width(Length::Fixed(status_size as f32))
@@ -306,15 +329,20 @@ impl Application for MonitoringGui {
         .spacing(10)
         .padding(20);
 
-        // Monitoring area with enhanced styling
         let log_content = column(
             self.log_messages
                 .iter()
                 .map(|message| {
+                    let text_color = match message.log_type {
+                        LogType::Serial => theme::SERIAL,
+                        LogType::TCP => theme::ACCENT,
+                        LogType::Normal => theme::TEXT,
+                    };
+                    
                     container(
-                        text(message)
+                        text(&message.content)
                             .size(14)
-                            .style(theme::TEXT)
+                            .style(iced::theme::Text::Color(text_color))
                     )
                     .width(Length::Fill)
                     .padding(4)
