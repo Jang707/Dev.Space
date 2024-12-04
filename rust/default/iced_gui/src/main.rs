@@ -30,8 +30,8 @@ mod theme {
         0xAC as f32 / 255.0,
     );
     pub const TEXT: Color = Color::from_rgb(
-        0xEC as f32 / 255.0,
-        0xEF as f32 / 255.0,
+        0xF4 as f32 / 255.0,
+        0xF4 as f32 / 255.0,
         0xF4 as f32 / 255.0,
     );
     pub const SUCCESS: Color = Color::from_rgb(
@@ -219,37 +219,40 @@ impl Application for MonitoringGui {
                         self.log_messages.remove(0);
                     }
                 }
-                if received {
-                    self.scroll_state.scrolled_to_bottom = true;
-                    Command::perform(async {}, |_| Message::AutoScroll)
+                if received && self.auto_scroll {
+                    Command::batch(vec![
+                        scrollable::snap_to(
+                            scrollable::Id::new("log_scroll"),
+                            scrollable::RelativeOffset::END,
+                        ),
+                        Command::perform(async {}, |_| Message::AutoScroll)
+                    ])
                 } else {
                     Command::none()
                 }
             }
             Message::Scrolled(viewport) => {
                 self.scroll_state.viewport = Some(viewport);
-                if self.auto_scroll {
-                    self.scroll_state.scrolled_to_bottom = true;
-                } else {
-                    self.scroll_state.scrolled_to_bottom = viewport.relative_offset().y > 0.99;
+                if !self.auto_scroll{
+                    self.scroll_state.scrolled_to_bottom = viewport.relative_offset().y >= 0.99;
                 }
                 Command::none()
             }
             Message::ToggleAutoScroll => {
                 self.auto_scroll = !self.auto_scroll;
                 if self.auto_scroll {
-                    self.scroll_state.scrolled_to_bottom = true;
-                    Command::perform(async {}, |_| Message::AutoScroll)
+                    Command::batch(vec![
+                        scrollable::snap_to(
+                            scrollable::Id::new("log_scroll"), 
+                            scrollable::RelativeOffset::END,
+                        ),
+                        Command::perform(async {},|_| Message::AutoScroll),
+                    ])
                 } else {
                     Command::none()
                 }
             }
             Message::AutoScroll => {
-                if self.scroll_state.scrolled_to_bottom {
-                    if let Some(_) = &self.scroll_state.viewport {
-                        self.scroll_state.scrolled_to_bottom = true;
-                    }
-                }
                 Command::none()
             }
         }
