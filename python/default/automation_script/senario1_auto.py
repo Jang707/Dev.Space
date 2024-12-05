@@ -91,10 +91,6 @@ class AutomationManager:
         """연결 종료 및 정리"""
         print("정리 작업 시작...")
         self.stop_event.set()
-        
-        if self.flask_thread and self.flask_thread.is_alive():
-            self.kill_existing_flask()
-            self.flask_thread.join(timeout=5)
             
         if self.monitoring_process:
             if os.name == 'nt':
@@ -125,7 +121,8 @@ def main():
         # 포트 선점 문제로인해 Pico 설정을 먼저 진행합니다.
         print("Raspberry Pi Pico 설정 중...")
         manager.setup_pico()
-        time.sleep(2)
+        print("Raspberry Pi Pico 연결 해제 후 다시 연결해주세요.")
+        time.sleep(10)
 
         print("모니터링 서버 시작 중...")
         manager.start_monitoring_server()
@@ -133,7 +130,7 @@ def main():
         time.sleep(5)
         
         print("\n모든 서비스가 시작되었습니다. 종료하려면 Ctrl+C를 누르세요...\n")
-        
+        print("Bluetooth 연결은 MAC Address: C8:FD:19:91:14:F8 과 연결하세요.")
         # 메인 루프
         while True:
             time.sleep(1)

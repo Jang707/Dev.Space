@@ -39,7 +39,7 @@ class AutomationManager:
     def start_monitoring_server(self):
         """PC에서 모니터링 서버 실행"""
         try:
-            monitoring_server_path = r"D:\jang_git_space\Dev.Space\rust\default\iced_gui"
+            monitoring_server_path = r"D:\Dev.Space\rust\default\iced_gui"
             
             if not os.path.exists(monitoring_server_path):
                 raise FileNotFoundError(f"경로를 찾을 수 없습니다: {monitoring_server_path}")
@@ -75,7 +75,7 @@ class AutomationManager:
         """Flask 서버를 별도 스레드에서 실행"""
         try:
             command = (
-                "source /home/devops_r4/Dev.Space/venv_python/sn3/bin/activate && "
+                "source /home/devops_r4/senario_3/senario_3_Pi4_venv/bin/activate && "
                 "python /home/devops_r4/Dev.Space/python/sn3/Senario_3_Pi4.py"
             )
             
@@ -139,7 +139,7 @@ class AutomationManager:
     def setup_pico(self):
         """Raspberry Pi Pico 설정"""
         try:
-            pico_main = "D:\jang_git_space\Dev.Space\python\sn3\pico\main.py"
+            pico_main = "D:\Dev.Space\python\sn3\pico\main.py"
             pico_port = None
             ports = serial.tools.list_ports.comports()
             print("Looking for Raspberry pi pico...")

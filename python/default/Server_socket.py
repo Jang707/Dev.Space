@@ -155,7 +155,7 @@ class TCPServer:
         self.server_thread.start()
         self._log_to_callback("[Server] Server started")
         
-        self.serial_handler.start()
+        #self.serial_handler.start()
         return True
 
     def stop(self) -> None:
