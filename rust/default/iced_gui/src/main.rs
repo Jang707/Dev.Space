@@ -1,5 +1,6 @@
 #![allow(non_ascii_idents)]
-use iced::widget::{button, column, container, row, scrollable, text, mouse_area, Button, Column, Row, Text};
+use iced::widget::{container, scrollable, text, mouse_area, Button, Column, Row, Text};
+use iced::widget::{button, row, column};
 use iced::{executor, Application, Command, Element, Length, Subscription, Theme, Color};
 use iced::Font;
 //use iced::Alignment;
@@ -449,43 +450,54 @@ impl Application for MonitoringGui {
         .id(scrollable::Id::new("log_scroll"));
 
         // Dropdown
-        let dropdown = {
-            let selected_text = Text::new(format!("Selected: {}", self.dropdown_state.selected))
+        let build_dropdown = || {
+            let selected_text: Element<Message> = text(format!("Selected: {}", self.dropdown_state.selected))
                 .size(16)
-                .style(iced::theme::Text::Color(theme::TEXT));
-
+                .style(iced::theme::Text::Color(theme::TEXT))
+                .into();
+        
+            let arrow_text: Element<Message> = text("▼")
+                .size(16)
+                .style(iced::theme::Text::Color(theme::TEXT))
+                .into();
+        
             let dropdown_button = button(
                 row![
                     selected_text,
-                    text("▼").size(16).style(iced::theme::Text::Color(theme::TEXT))
+                    arrow_text
                 ]
                 .spacing(10)
             )
             .style(iced::theme::Button::Custom(Box::new(DropdownButton)))
             .padding([8, 16])
             .on_press(Message::DropdownToggle);
-
+        
             let dropdown_content = if self.dropdown_state.is_expanded {
-                column(
-                    CHOICES.iter().map(|choice| {
-                        button(
-                            text(choice.to_string())
+                container(
+                    column(
+                        CHOICES.iter().map(|choice| {
+                            let choice_text: Element<Message> = text(choice.to_string())
                                 .size(16)
                                 .style(iced::theme::Text::Color(theme::TEXT))
-                        )
-                        .style(iced::theme::Button::Custom(Box::new(DropdownItem)))
-                        .padding([8, 16])
-                        .width(Length::Fill)
-                        .on_press(Message::DropdownSelect(choice.clone()))
-                        .into()
-                    }).collect()
+                                .into();
+                                
+                            button(choice_text)
+                                .style(iced::theme::Button::Custom(Box::new(DropdownItem)))
+                                .padding([8, 16])
+                                .width(Length::Fill)
+                                .on_press(Message::DropdownSelect(choice.clone()))
+                                .into()
+                        }).collect()
+                    )
+                    .spacing(2)
                 )
-                .spacing(2)
+                .style(iced::theme::Container::Custom(Box::new(DropdownList)))
                 .width(Length::Fill)
             } else {
-                column![]
+                container(column![])
+                    .width(Length::Fill)
             };
-
+        
             container(
                 column![
                     dropdown_button,
@@ -496,16 +508,16 @@ impl Application for MonitoringGui {
             .style(iced::theme::Container::Custom(Box::new(DropdownContainer)))
             .width(Length::Fixed(200.0))
         };
-
-        let dropdown_container: Element<Message> = if self.dropdown_state.is_expanded{
-            mouse_area(container(dropdown))
+        
+        let dropdown_container: Element<Message> = if self.dropdown_state.is_expanded {
+            mouse_area(container(build_dropdown()))
                 .on_press(Message::DropdownOutsideClick)
                 .into()
         } else {
-            container(dropdown)
+            container(build_dropdown())
                 .into()
         };
-
+        
         let content = column![
             header,
             dropdown_container,
@@ -543,11 +555,11 @@ struct InactiveIndicator;
 struct MonitoringArea;
 struct DarkContainer;
 struct LogEntry;
-struct CustomContainer;
 
 struct DropdownButton;
 struct DropdownContainer;
 struct DropdownItem;
+struct DropdownList;
 
 impl button::StyleSheet for CustomButton {
     type Style = Theme;
@@ -693,6 +705,20 @@ impl container::StyleSheet for DropdownContainer {
     }
 }
 
+impl container::StyleSheet for DropdownList {
+    type Style = Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(iced::Background::Color(theme::SURFACE)),
+            border_width: 1.0,
+            border_color: theme::ACCENT,
+            border_radius: 4.0.into(),
+            ..Default::default()
+        }
+    }
+}
+
 impl button::StyleSheet for DropdownItem {
     type Style = Theme;
 
@@ -700,7 +726,7 @@ impl button::StyleSheet for DropdownItem {
         button::Appearance {
             background: Some(iced::Background::Color(theme::SURFACE)),
             border_radius: 4.0.into(),
-            border_width: 0.0,
+            border_width: 1.0,
             text_color: theme::TEXT,
             ..Default::default()
         }
@@ -709,11 +735,11 @@ impl button::StyleSheet for DropdownItem {
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: Some(iced::Background::Color(Color {
-                a: 0.2,
+                //a: 0.1,
                 ..theme::ACCENT
             })),
             border_radius: 4.0.into(),
-            border_width: 0.0,
+            border_width: 1.0,
             text_color: theme::TEXT,
             ..Default::default()
         }
