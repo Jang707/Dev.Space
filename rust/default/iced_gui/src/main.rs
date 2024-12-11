@@ -1,12 +1,22 @@
 #![allow(non_ascii_idents)]
-use iced::widget::{button, column, container, row, scrollable, text};
+use iced::widget::{button, column, container, row, scrollable, text, mouse_area, Button, Column, Row, Text};
 use iced::{executor, Application, Command, Element, Length, Subscription, Theme, Color};
 use iced::Font;
+//use iced::Alignment;
+// 드롭다운 메뉴의 위치를 지정하는 타입 입니다. 현재는 구현되지 않았지만 향후 드롭다운 위치 조정에 사용될 수 있습니다.
+/*
+#[derive(Debug, Clone)]
+enum Position{
+    Relative { x: f32, y: f32 },
+    Absolute { x: f32, y: f32 },
+}
+ */
 use chrono::Local;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::fmt::Display;
 
 const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
@@ -101,6 +111,19 @@ struct LogMessage {
     log_type: LogType,
 }
 
+#[derive(Debug, Clone)]
+struct DropdownState {
+    selected: Choice,
+    is_expanded: bool,
+    position: Position,
+}
+
+#[derive(Debug, Clone)]
+enum Position {
+    Relative { x: f32, y: f32 },
+    Absolute { x: f32, y: f32 },
+}
+
 struct MonitoringGui {
     log_messages: Vec<LogMessage>,
     is_normal: bool,
@@ -108,7 +131,33 @@ struct MonitoringGui {
     receiver: mpsc::Receiver<String>,
     scroll_state: ScrollState,
     auto_scroll: bool,
+    // for Dropdown
+    dropdown_state: DropdownState,
+    // Dropdown END
 }
+
+#[derive(Clone, Debug, Default)]
+enum Choice{
+    #[default]
+    Scenario1,
+    Scenario2,
+    Scenario3,
+    Scenario4,
+    Scenario5,
+    Scenario6,
+    Scenario7,
+    Scenario8,
+}
+const CHOICES: [Choice; 8] = [
+    Choice::Scenario1,
+    Choice::Scenario2,
+    Choice::Scenario3,
+    Choice::Scenario4,
+    Choice::Scenario5,
+    Choice::Scenario6,
+    Choice::Scenario7,
+    Choice::Scenario8,
+];
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -118,6 +167,11 @@ enum Message {
     Scrolled(scrollable::Viewport),
     AutoScroll,
     ToggleAutoScroll,
+    // Dropdown
+    DropdownSelect(Choice),
+    DropdownToggle,
+    DropdownOutsideClick,
+    // Dropdown END
 }
 
 #[pyfunction]
@@ -160,6 +214,11 @@ impl Application for MonitoringGui {
             receiver,
             scroll_state: ScrollState::default(),
             auto_scroll: true,
+            dropdown_state: DropdownState{
+                selected: Choice::default(),
+                is_expanded: false,
+                position: Position::Relative { x:0.0, y:0.0},
+            },
         };
 
         Python::with_gil(|py| {
@@ -255,6 +314,28 @@ impl Application for MonitoringGui {
             Message::AutoScroll => {
                 Command::none()
             }
+            // Dropdown
+            Message::DropdownSelect(choice) => {
+                self.dropdown_state.selected = choice.clone();
+                self.dropdown_state.is_expanded = false;
+                let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                self.log_messages.push(LogMessage {
+                    content: format!("{} Scenario {} is selected.", current_time, choice),
+                    log_type: LogType::Normal
+                });
+                Command::none()
+            }
+            Message::DropdownToggle => {
+                self.dropdown_state.is_expanded = !self.dropdown_state.is_expanded;
+                Command::none()
+            }
+            Message::DropdownOutsideClick => {
+                if self.dropdown_state.is_expanded{
+                    self.dropdown_state.is_expanded = false;
+                }
+                Command::none()
+            },
+            // Dropdown END
         }
     }
 
@@ -367,8 +448,67 @@ impl Application for MonitoringGui {
         .on_scroll(Message::Scrolled)
         .id(scrollable::Id::new("log_scroll"));
 
+        // Dropdown
+        let dropdown = {
+            let selected_text = Text::new(format!("Selected: {}", self.dropdown_state.selected))
+                .size(16)
+                .style(iced::theme::Text::Color(theme::TEXT));
+
+            let dropdown_button = button(
+                row![
+                    selected_text,
+                    text("▼").size(16).style(iced::theme::Text::Color(theme::TEXT))
+                ]
+                .spacing(10)
+            )
+            .style(iced::theme::Button::Custom(Box::new(DropdownButton)))
+            .padding([8, 16])
+            .on_press(Message::DropdownToggle);
+
+            let dropdown_content = if self.dropdown_state.is_expanded {
+                column(
+                    CHOICES.iter().map(|choice| {
+                        button(
+                            text(choice.to_string())
+                                .size(16)
+                                .style(iced::theme::Text::Color(theme::TEXT))
+                        )
+                        .style(iced::theme::Button::Custom(Box::new(DropdownItem)))
+                        .padding([8, 16])
+                        .width(Length::Fill)
+                        .on_press(Message::DropdownSelect(choice.clone()))
+                        .into()
+                    }).collect()
+                )
+                .spacing(2)
+                .width(Length::Fill)
+            } else {
+                column![]
+            };
+
+            container(
+                column![
+                    dropdown_button,
+                    dropdown_content
+                ]
+                .spacing(2)
+            )
+            .style(iced::theme::Container::Custom(Box::new(DropdownContainer)))
+            .width(Length::Fixed(200.0))
+        };
+
+        let dropdown_container: Element<Message> = if self.dropdown_state.is_expanded{
+            mouse_area(container(dropdown))
+                .on_press(Message::DropdownOutsideClick)
+                .into()
+        } else {
+            container(dropdown)
+                .into()
+        };
+
         let content = column![
             header,
+            dropdown_container,
             button_row,
             status_row,
             monitoring_area,
@@ -403,28 +543,58 @@ struct InactiveIndicator;
 struct MonitoringArea;
 struct DarkContainer;
 struct LogEntry;
+struct CustomContainer;
+
+struct DropdownButton;
+struct DropdownContainer;
+struct DropdownItem;
 
 impl button::StyleSheet for CustomButton {
     type Style = Theme;
 
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(iced::Background::Color(theme::ACCENT)),
+            background: Some(iced::Background::Color(theme::SURFACE)),
             border_radius: 6.0.into(),
-            border_width: 0.0,
-            border_color: Color::TRANSPARENT,
+            border_width: 1.0,
+            border_color: theme::ACCENT,
             text_color: theme::TEXT,
-            shadow_offset: iced::Vector::new(0.0, 2.0),
             ..Default::default()
         }
     }
 
     fn hovered(&self, style: &Self::Style) -> button::Appearance {
         let mut active = self.active(style);
-        // Instead of using lighten(), use a slightly modified color
-        let hovered_color = Color {a: theme::ACCENT.a, ..theme::ACCENT };
-        active.background = Some(iced::Background::Color(hovered_color));
-        active.shadow_offset = iced::Vector::new(0.0, 3.0);
+        active.background = Some(iced::Background::Color(Color {
+            a: 0.8,
+            ..theme::ACCENT
+        }));
+        active
+    }
+}
+
+impl button::StyleSheet for DropdownButton {
+    type Style = Theme;
+
+    fn active(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            background: Some(iced::Background::Color(theme::SURFACE)),
+            border_radius: 6.0.into(),
+            border_width: 1.0,
+            border_color: theme::ACCENT,
+            text_color: theme::TEXT,
+            shadow_offset: iced::Vector::new(0.0, 1.0),
+            ..Default::default()
+        }
+    }
+
+    fn hovered(&self, style: &Self::Style) -> button::Appearance {
+        let mut active = self.active(style);
+        active.border_color = Color {
+            a: 0.8,
+            ..theme::ACCENT
+        };
+        active.shadow_offset = iced::Vector::new(0.0, 2.0);
         active
     }
 }
@@ -507,3 +677,61 @@ impl container::StyleSheet for LogEntry {
         }
     }
 }
+// for Dropdown
+impl container::StyleSheet for DropdownContainer {
+    type Style = Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(iced::Background::Color(theme::SURFACE)),
+            border_radius: 6.0.into(),
+            border_width: 1.0,
+            border_color: theme::ACCENT,
+            text_color: Some(theme::TEXT),
+            ..Default::default()
+        }
+    }
+}
+
+impl button::StyleSheet for DropdownItem {
+    type Style = Theme;
+
+    fn active(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            background: Some(iced::Background::Color(theme::SURFACE)),
+            border_radius: 4.0.into(),
+            border_width: 0.0,
+            text_color: theme::TEXT,
+            ..Default::default()
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            background: Some(iced::Background::Color(Color {
+                a: 0.2,
+                ..theme::ACCENT
+            })),
+            border_radius: 4.0.into(),
+            border_width: 0.0,
+            text_color: theme::TEXT,
+            ..Default::default()
+        }
+    }
+}
+
+impl Display for Choice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Choice::Scenario1 => write!(f,"Scenario 1"),
+            Choice::Scenario2 => write!(f,"Scenario 2"),
+            Choice::Scenario3 => write!(f,"Scenario 3"),
+            Choice::Scenario4 => write!(f,"Scenario 4"),
+            Choice::Scenario5 => write!(f,"Scenario 5"),
+            Choice::Scenario6 => write!(f,"Scenario 6"),
+            Choice::Scenario7 => write!(f,"Scenario 7"),
+            Choice::Scenario8 => write!(f,"Scenario 8"),
+        }
+    }
+}
+// Dropdown END
