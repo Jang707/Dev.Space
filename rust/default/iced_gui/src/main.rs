@@ -18,6 +18,9 @@ use pyo3::types::PyTuple;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::fmt::Display;
+use std::process::Command as ProcessCommand;
+use tokio::spawn;
+use std::path::Path;
 
 const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
@@ -135,6 +138,8 @@ struct MonitoringGui {
     // for Dropdown
     dropdown_state: DropdownState,
     // Dropdown END
+    current_script: Option<String>,     // 현재 실행중인 스크립트 경로
+    script_running: bool,               // 스크립트 실행 상태
 }
 
 #[derive(Clone, Debug, Default)]
@@ -173,6 +178,9 @@ enum Message {
     DropdownToggle,
     DropdownOutsideClick,
     // Dropdown END
+    ScriptExecutionStarted(String),     // 스크립트 실행 시작 - 파일 경로 포함
+    ScriptExecutionSuccess(String),     // 스크립트 실행 성공 - 출력 메시지 포함
+    ScriptExecutionError(String),       // 스크립트 실행 실패 - 에러 메시지 포함
 }
 
 #[pyfunction]
@@ -195,6 +203,46 @@ impl MonitoringGui {
         } else {
             LogType::Normal
         }
+    }
+    // 파이썬 코드 실행 메서드 : execute_script, handle_script_completion
+    fn execute_script(&mut self, is_normal: bool) -> Command<Message> {
+        let script_path = self.dropdown_state.selected.get_script_path(is_normal);
+            
+        if self.script_running {
+            return Command::perform(
+                async { format!("Another script is already running. Please wait.") },
+                Message::ScriptExecutionError,
+            );
+        }
+    
+        if !Path::new(&script_path).exists() {
+            return Command::perform(
+                async move { format!("Script file not found: {}", script_path) },
+                Message::ScriptExecutionError,
+            );
+        }
+    
+        self.current_script = Some(script_path.clone());
+        self.script_running = true;
+    
+        Command::perform(async move {
+            match ProcessCommand::new("python")
+                .arg(&script_path)
+                .spawn()
+            {
+                Ok(_) => Message::ScriptExecutionSuccess(
+                    format!("Successfully started script: {}", script_path)
+                ),
+                Err(e) => Message::ScriptExecutionError(
+                    format!("Failed to execute script {}: {}", script_path, e)
+                ),
+            }
+        }, |msg| msg)
+    }
+    
+    fn handle_script_completion(&mut self, success: bool, message: String) {
+        self.script_running = false;
+        self.current_script = None;
     }
 }
 
@@ -220,6 +268,9 @@ impl Application for MonitoringGui {
                 is_expanded: false,
                 position: Position::Relative { x:0.0, y:0.0},
             },
+            // 파이썬 코드 실행용 필드 초기화.
+            current_script: None,
+            script_running: false,
         };
 
         Python::with_gil(|py| {
@@ -254,7 +305,11 @@ impl Application for MonitoringGui {
                 });
                 self.is_normal = true;
                 self.scroll_state.scrolled_to_bottom = true;
-                Command::perform(async {}, |_| Message::AutoScroll)
+                // 파이썬 스크립트 실행 명령
+                Command::batch(vec![
+                    self.execute_script(true),
+                    Command::perform(async {}, |_| Message::AutoScroll)
+                ])
             }
             Message::AbnormalCreation => {
                 let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
@@ -264,8 +319,42 @@ impl Application for MonitoringGui {
                 });
                 self.is_normal = false;
                 self.scroll_state.scrolled_to_bottom = true;
-                Command::perform(async {}, |_| Message::AutoScroll)
+                // 파이썬 스크립트 실행 명령
+                Command::batch(vec![
+                    self.execute_script(false),
+                    Command::perform(async {}, |_| Message::AutoScroll)
+                ])
             }
+            // 파이썬 스크립트 실행 핸들러
+            Message::ScriptExecutionStarted(path) => {
+                let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                self.log_messages.push(LogMessage {
+                    content: format!("{} Starting script execution: {}", current_time, path),
+                    log_type: LogType::Normal
+                });
+                Command::none()
+            }
+            // 파이썬 스크립트 실행 성공시 메시지 핸들러
+            Message::ScriptExecutionSuccess(message) => {
+                let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                self.log_messages.push(LogMessage {
+                    content: format!("{} {}", current_time, message),
+                    log_type: LogType::Normal
+                });
+                self.handle_script_completion(true, message);
+                Command::none()
+            }
+            // 파이썬 스크립트 실행 실패시 메시지 핸들러
+            Message::ScriptExecutionError(error) => {
+                let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                self.log_messages.push(LogMessage {
+                    content: format!("{} Error: {}", current_time, error),
+                    log_type: LogType::Normal
+                });
+                self.handle_script_completion(false, error);
+                Command::none()
+            }
+
             Message::CheckIncoming => {
                 let mut received = false;
                 while let Ok(data) = self.receiver.try_recv() {
@@ -324,7 +413,7 @@ impl Application for MonitoringGui {
                     content: format!("{} Scenario {} is selected.", current_time, choice),
                     log_type: LogType::Normal
                 });
-                Command::none()
+                Command::perform(async {}, |_| Message::AutoScroll)
             }
             Message::DropdownToggle => {
                 self.dropdown_state.is_expanded = !self.dropdown_state.is_expanded;
@@ -746,17 +835,39 @@ impl button::StyleSheet for DropdownItem {
     }
 }
 
+impl Choice {
+    fn get_script_path(&self, is_normal: bool) -> String {
+        let base_path = "D:\\Dev.Space\\python\\default\\automation_script\\";
+        let script_name = match self {
+            Choice::Scenario1 => "scenario1",
+            Choice::Scenario2 => "scenario2",
+            Choice::Scenario3 => "scenario3",
+            Choice::Scenario4 => "scenario4",
+            Choice::Scenario5 => "scenario5",
+            Choice::Scenario6 => "scenario6",
+            Choice::Scenario7 => "scenario7",
+            Choice::Scenario8 => "scenario8",
+        };
+        
+        format!("{}{}_{}.py", 
+            base_path, 
+            script_name, 
+            if is_normal { "auto" } else { "abnormal" }
+        )
+    }
+}
+
 impl Display for Choice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Choice::Scenario1 => write!(f,"Scenario 1"),
-            Choice::Scenario2 => write!(f,"Scenario 2"),
-            Choice::Scenario3 => write!(f,"Scenario 3"),
-            Choice::Scenario4 => write!(f,"Scenario 4"),
-            Choice::Scenario5 => write!(f,"Scenario 5"),
-            Choice::Scenario6 => write!(f,"Scenario 6"),
-            Choice::Scenario7 => write!(f,"Scenario 7"),
-            Choice::Scenario8 => write!(f,"Scenario 8"),
+            Choice::Scenario1 => write!(f, "Scenario 1"),
+            Choice::Scenario2 => write!(f, "Scenario 2"),
+            Choice::Scenario3 => write!(f, "Scenario 3"),
+            Choice::Scenario4 => write!(f, "Scenario 4"),
+            Choice::Scenario5 => write!(f, "Scenario 5"),
+            Choice::Scenario6 => write!(f, "Scenario 6"),
+            Choice::Scenario7 => write!(f, "Scenario 7"),
+            Choice::Scenario8 => write!(f, "Scenario 8"),
         }
     }
 }
