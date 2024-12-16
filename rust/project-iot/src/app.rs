@@ -12,6 +12,16 @@ use crate::components::{ScrollState, LogMessage, DropdownState, Position};
 use crate::styles::*;
 use crate::theme;
 
+struct MonitoringGui {
+    log_messages: Vec<LogMessage>,
+    is_normal: bool,
+    python_server: Option<PyObject>,
+    receiver: mpsc::Receiver<String>,
+    scroll_state: ScrollState,
+    auto_scroll: bool,
+    dropdown_state: DropdownState,
+}
+
 impl MonitoringGui {
     fn parse_log_type(message: &str) -> LogType {
         if message.contains("[Serial]") {
