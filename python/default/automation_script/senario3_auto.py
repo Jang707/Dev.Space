@@ -212,10 +212,10 @@ def main():
     manager = AutomationManager(PI4_IP, PI4_USERNAME, PI4_PASSWORD)
     
     try:
-        print("모니터링 서버 시작 중...")
-        manager.start_monitoring_server()
-        print("서버 초기화 대기 중...")
-        time.sleep(5)
+        #print("모니터링 서버 시작 중...")
+        # manager.start_monitoring_server()
+        #print("서버 초기화 대기 중...")
+        #time.sleep(5)
 
         print("Raspberry Pi 4에 연결 중...")
         manager.connect_ssh()
