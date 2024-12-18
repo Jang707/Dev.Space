@@ -21,6 +21,7 @@ use std::fmt::Display;
 use std::process::Command as ProcessCommand;
 use tokio::spawn;
 use std::path::Path;
+use std::process::Child;
 
 const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
@@ -139,7 +140,8 @@ struct MonitoringGui {
     dropdown_state: DropdownState,
     // Dropdown END
     current_script: Option<String>,     // 현재 실행중인 스크립트 경로
-    script_running: bool,               // 스크립트 실행 상태
+    script_running: bool,               // 스크립트 실행 상태 확인용
+    current_process: Option<Child>,     // 현재 실행중인 프로세스(스크립트)
 }
 
 #[derive(Clone, Debug, Default)]
@@ -181,6 +183,9 @@ enum Message {
     ScriptExecutionStarted(String),     // 스크립트 실행 시작 - 파일 경로 포함
     ScriptExecutionSuccess(String),     // 스크립트 실행 성공 - 출력 메시지 포함
     ScriptExecutionError(String),       // 스크립트 실행 실패 - 에러 메시지 포함
+    TerminateScenario,                  // 시나리오 종료 버튼 클릭 시
+    ScriptTerminationSuccess(String),   // 스크립트 종료 성공 - 종료된 스크립트 경로 포함
+    ScriptTerminationError(String),     // 스크립트 종료 실패 - 에러 메시지 포함
 }
 
 #[pyfunction]
@@ -221,28 +226,84 @@ impl MonitoringGui {
                 Message::ScriptExecutionError,
             );
         }
-    
-        self.current_script = Some(script_path.clone());
-        self.script_running = true;
-    
-        Command::perform(async move {
-            match ProcessCommand::new("python")
-                .arg(&script_path)
-                .spawn()
-            {
-                Ok(_) => Message::ScriptExecutionSuccess(
-                    format!("Successfully started script: {}", script_path)
-                ),
-                Err(e) => Message::ScriptExecutionError(
-                    format!("Failed to execute script {}: {}", script_path, e)
-                ),
-            }
-        }, |msg| msg)
+        
+        // 래퍼 스크립트를 통해 실행
+        match ProcessCommand::new("python")
+            .arg("D:\\Dev.Space\\python\\run_scenario.py")  // 래퍼 스크립트 경로
+            .arg(&script_path)
+            .spawn() {
+                Ok(child) => {
+                    self.current_process = Some(child);
+                    self.current_script = Some(script_path.clone());
+                    self.script_running = true;
+                    
+                    Command::perform(
+                        async move { format!("Successfully started script: {}", script_path) },
+                        Message::ScriptExecutionSuccess
+                    )
+                },
+                Err(e) => Command::perform(
+                    async move { format!("Failed to execute script: {}", e) },
+                    Message::ScriptExecutionError
+                )
+        }
     }
     
     fn handle_script_completion(&mut self, success: bool, message: String) {
-        self.script_running = false;
+        //self.script_running = false;
+        //self.current_script = None;
+    }
+
+    fn terminate_script(&mut self) -> Command<Message> {
+        if let Some(pid) = std::fs::read_to_string("scenario_pid.txt").ok().and_then(|s| s.trim().parse::<u32>().ok()) {
+            // Windows에서는 taskkill 사용
+            if cfg!(windows) {
+                match ProcessCommand::new("taskkill")
+                    .args(&["/F", "/T", "/PID", &pid.to_string()])
+                    .output() {
+                    Ok(_) => {
+                        self.reset_process_state();
+                        Command::perform(
+                            async { format!("Successfully terminated script") },
+                            Message::ScriptTerminationSuccess,
+                        )
+                    },
+                    Err(e) => Command::perform(
+                        async move { format!("Failed to terminate script: {}", e) },
+                        Message::ScriptTerminationError,
+                    )
+                }
+            } else {
+                // Unix 시스템에서는 kill 사용
+                match ProcessCommand::new("kill")
+                    .arg("-15")  // SIGTERM
+                    .arg(pid.to_string())
+                    .output() {
+                    Ok(_) => {
+                        self.reset_process_state();
+                        Command::perform(
+                            async { format!("Successfully terminated script") },
+                            Message::ScriptTerminationSuccess,
+                        )
+                    },
+                    Err(e) => Command::perform(
+                        async move { format!("Failed to terminate script: {}", e) },
+                        Message::ScriptTerminationError,
+                    )
+                }
+            }
+        } else {
+            Command::perform(
+                async { String::from("No running script to terminate") },
+                Message::ScriptTerminationError,
+            )
+        }
+    }
+    // 프로세스 상태 초기화를 위한 helper 함수
+    fn reset_process_state(&mut self) {
+        self.current_process = None;
         self.current_script = None;
+        self.script_running = false;
     }
 }
 
@@ -271,6 +332,7 @@ impl Application for MonitoringGui {
             // 파이썬 코드 실행용 필드 초기화.
             current_script: None,
             script_running: false,
+            current_process: None,
         };
 
         Python::with_gil(|py| {
@@ -426,6 +488,36 @@ impl Application for MonitoringGui {
                 Command::none()
             },
             // Dropdown END
+            // 파이썬 스크립트 종료를 위한 메시지 처리.
+            Message::TerminateScenario => {
+                if self.script_running {
+                    let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                    self.log_messages.push(LogMessage {
+                        content: format!("{} Attempting to terminate current scenario...", current_time),
+                        log_type: LogType::Normal
+                    });
+                    self.terminate_script()
+                } else {
+                    Command::none()
+                }
+            },
+            Message::ScriptTerminationSuccess(message) => {
+                let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                self.log_messages.push(LogMessage {
+                    content: format!("{} {}", current_time, message),
+                    log_type: LogType::Normal
+                });
+                self.reset_process_state();
+                Command::none()
+            },
+            Message::ScriptTerminationError(error) => {
+                let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
+                self.log_messages.push(LogMessage {
+                    content: format!("{} Error: {}", current_time, error),
+                    log_type: LogType::Normal
+                });
+                Command::none()
+            },
         }
     }
 
@@ -472,6 +564,21 @@ impl Application for MonitoringGui {
             button_style("Abnormal Creation").on_press(Message::AbnormalCreation),
             button_style(if self.auto_scroll {"Auto Scroll: ON"} else {"Auto Scroll: OFF"})
                 .on_press(Message::ToggleAutoScroll),
+            if self.script_running {
+                button_style("Terminate Scenario")
+                    .on_press(Message::TerminateScenario)
+            } else {
+                button(
+                    text("Terminate Scenario")
+                        .size(16)
+                        .style(iced::theme::Text::Color(Color {
+                            a: 0.5,
+                            ..theme::TEXT
+                        }))
+                )
+                .padding([8, 16])
+                .style(iced::theme::Button::Custom(Box::new(DisabledButton)))
+            }
         ]
         .spacing(15)
         .padding(20);
@@ -649,6 +756,8 @@ struct DropdownButton;
 struct DropdownContainer;
 struct DropdownItem;
 struct DropdownList;
+
+struct DisabledButton;  // 파일 스크립트 종료 버튼의 비활성화를 위한 기능.
 
 impl button::StyleSheet for CustomButton {
     type Style = Theme;
@@ -872,3 +981,31 @@ impl Display for Choice {
     }
 }
 // Dropdown END
+
+impl button::StyleSheet for DisabledButton {
+    type Style = Theme;
+
+    fn active(&self, _style: &Self::Style) -> button::Appearance {
+        button::Appearance {
+            background: Some(iced::Background::Color(Color {
+                a: 0.5,
+                ..theme::SURFACE
+            })),
+            border_radius: 6.0.into(),
+            border_width: 1.0,
+            border_color: Color {
+                a: 0.5,
+                ..theme::ACCENT
+            },
+            text_color: Color {
+                a: 0.5,
+                ..theme::TEXT
+            },
+            ..Default::default()
+        }
+    }
+
+    fn hovered(&self, style: &Self::Style) -> button::Appearance {
+        self.active(style)
+    }
+}
