@@ -196,20 +196,38 @@ class AutomationManager:
         
         print("정리 작업 완료")
 
-def signal_handler(signum, frame):
-    print("\n종료 신호를 받았습니다. 프로그램을 종료합니다...")
-    sys.exit(0)
+def setup_signal_handlers(cleanup_function):
+    """시그널 핸들러 설정"""
+    def signal_handler(signum, frame):
+        print("\n종료신호를 받았습니다. 정리 작업을 시작합니다...")
+        if cleanup_function:
+            cleanup_function()
+        sys.exit(0)
+    # Windows 의 경우 CTRL_BREAK_EVENT 처리
+    if os.name == 'nt':
+        signal.signal(signal.SIGBREAK, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    # PID 출력 ( Rust 에서 이를 캡쳐함)
+    print(f"PROCESS_ID:{os.getpid()}")
+    sys.stdout.flush()
+
+def check_termination():
+    """Termintaion Signal 체크"""
+    if sys.stdin.readable():
+        line = sys.stdin.readline().strip()
+        if line == "rs202300219928scenarioDONE":
+            return True
+    return False
 
 def main():
     PI4_IP = "192.168.0.4"
     PI4_USERNAME = "devops_r4"
     PI4_PASSWORD = "dbspt!23"
-    
-    # 시그널 핸들러 설정
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
+        
     manager = AutomationManager(PI4_IP, PI4_USERNAME, PI4_PASSWORD)
+    # 시그널 핸들러 설정
+    setup_signal_handlers(manager.cleanup)
     
     try:
         #print("모니터링 서버 시작 중...")
@@ -236,7 +254,8 @@ def main():
         # 메인 루프
         while True:
             time.sleep(1)
-            if manager.stop_event.is_set():
+            if check_termination():
+                print("종료 신호를 받았습니다.")
                 break
             
     except KeyboardInterrupt:

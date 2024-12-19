@@ -22,6 +22,11 @@ use std::process::Command as ProcessCommand;
 use tokio::spawn;
 use std::path::Path;
 use std::process::Child;
+// for terminate process
+use std::io::{BufRead, BufReader, Write};
+use std::process::Stdio;
+use std::sync::atomic::{AtomicU32, Ordering};
+static CURRENT_PID: AtomicU32 = AtomicU32::new(0);
 
 const SYSTEM_FONT: Font = Font::with_name("Malgun Gothic");
 
@@ -227,10 +232,9 @@ impl MonitoringGui {
             );
         }
         
-        // 래퍼 스크립트를 통해 실행
         match ProcessCommand::new("python")
-            .arg("D:\\Dev.Space\\python\\run_scenario.py")  // 래퍼 스크립트 경로
             .arg(&script_path)
+            .stdin(Stdio::piped())  // stdin 파이프 추가
             .spawn() {
                 Ok(child) => {
                     self.current_process = Some(child);
@@ -249,56 +253,41 @@ impl MonitoringGui {
         }
     }
     
-    fn handle_script_completion(&mut self, success: bool, message: String) {
+    fn handle_script_completion(&mut self, _success: bool, _message: String) {
         //self.script_running = false;
         //self.current_script = None;
     }
 
     fn terminate_script(&mut self) -> Command<Message> {
-        if let Some(pid) = std::fs::read_to_string("scenario_pid.txt").ok().and_then(|s| s.trim().parse::<u32>().ok()) {
-            // Windows에서는 taskkill 사용
-            if cfg!(windows) {
-                match ProcessCommand::new("taskkill")
-                    .args(&["/F", "/T", "/PID", &pid.to_string()])
-                    .output() {
+        if let Some(child) = &mut self.current_process {
+            if let Some(stdin) = child.stdin.as_mut() {
+                match writeln!(stdin, "rs202300219928scenarioDONE") {
                     Ok(_) => {
                         self.reset_process_state();
                         Command::perform(
-                            async { format!("Successfully terminated script") },
-                            Message::ScriptTerminationSuccess,
+                            async { String::from("Termination signal sent successfully") },
+                            Message::ScriptTerminationSuccess
                         )
                     },
                     Err(e) => Command::perform(
-                        async move { format!("Failed to terminate script: {}", e) },
-                        Message::ScriptTerminationError,
+                        async move { format!("Failed to send termination signal: {}", e) },
+                        Message::ScriptTerminationError
                     )
                 }
             } else {
-                // Unix 시스템에서는 kill 사용
-                match ProcessCommand::new("kill")
-                    .arg("-15")  // SIGTERM
-                    .arg(pid.to_string())
-                    .output() {
-                    Ok(_) => {
-                        self.reset_process_state();
-                        Command::perform(
-                            async { format!("Successfully terminated script") },
-                            Message::ScriptTerminationSuccess,
-                        )
-                    },
-                    Err(e) => Command::perform(
-                        async move { format!("Failed to terminate script: {}", e) },
-                        Message::ScriptTerminationError,
-                    )
-                }
+                Command::perform(
+                    async { String::from("Failed to get stdin handle") },
+                    Message::ScriptTerminationError
+                )
             }
         } else {
             Command::perform(
                 async { String::from("No running script to terminate") },
-                Message::ScriptTerminationError,
+                Message::ScriptTerminationError
             )
         }
     }
+
     // 프로세스 상태 초기화를 위한 helper 함수
     fn reset_process_state(&mut self) {
         self.current_process = None;

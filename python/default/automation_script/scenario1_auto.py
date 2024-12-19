@@ -109,6 +109,14 @@ def signal_handler(signum, frame):
     print("\n종료 신호를 받았습니다. 프로그램을 종료합니다...")
     sys.exit(0)
 
+def check_termination():
+    """Termintaion Signal 체크"""
+    if sys.stdin.readable():
+        line = sys.stdin.readline().strip()
+        if line == "rs202300219928scenarioDONE":
+            return True
+    return False
+
 def main():
     
     # 시그널 핸들러 설정
@@ -134,7 +142,8 @@ def main():
         # 메인 루프
         while True:
             time.sleep(1)
-            if manager.stop_event.is_set():
+            if check_termination():
+                print("종료 신호를 받았습니다.")
                 break
             
     except KeyboardInterrupt:
