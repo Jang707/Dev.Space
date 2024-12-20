@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quart WebSocket Example</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        .gas-status {
+            display: inline-block;
+            padding: 10px;
+            border: 2px solid black;
+            border-radius: 5px;
+            margin: 10px;
+        }
+        .gauge-container {
+            position: relative;
+            width: 200px;
+            height: 20px;
+            background-color: #ddd;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px;
+        }
+        .gauge-bar {
+            position: absolute;
+            height: 100%;
+            background-color: #4caf50;
+            width: 0;
+            transition: width 0.3s;
+        }
+        .color-box {
+            width: 50px;
+            height: 50px;
+            margin-top: 10px;
+            border: 1px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sensor Data</h1>
+    <div>Temperature: <span id="temperature">N/A</span></div>
+    <div>Humidity: <span id="humidity">N/A</span></div>
+    <div>Light Value: <span id="light_value">N/A</span></div>
+    <div class="gauge-container">
+        <div id="gauge-bar" class="gauge-bar"></div>
+    </div>
+    <div class="gas-status" id="gas_status">Normal</div>
+    <div>RGB Color: <span id="rgb_color">#FFFFFF</span></div>
+    <div class="color-box" id="color_box" style="background-color: #FFFFFF;"></div>
+
+    <h2>Set RGB Color</h2>
+    <form id="rgb-form">
+        <label for="r">R:</label>
+        <input type="number" id="r" name="r" min="0" max="255">
+        <label for="g">G:</label>
+        <input type="number" id="g" name="g" min="0" max="255">
+        <label for="b">B:</label>
+        <input type="number" id="b" name="b" min="0" max="255">
+        <button type="submit">Set RGB</button>
+    </form>
+
+    <script>
+        const temperatureElement = document.getElementById('temperature');
+        const humidityElement = document.getElementById('humidity');
+        const lightValueElement = document.getElementById('light_value');
+        const gasStatusElement = document.getElementById('gas_status');
+        const rgbColorElement = document.getElementById('rgb_color');
+        const colorBoxElement = document.getElementById('color_box');
+        const gaugeBarElement = document.getElementById('gauge-bar');
+
+        const ws = new WebSocket('ws://192.168.0.1:5000/ws');
+
+        ws.onopen = () => {
+            console.log('WebSocket connection established');
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            temperatureElement.textContent = data.temperature;
+            humidityElement.textContent = data.humidity;
+            lightValueElement.textContent = data.light_value;
+            gasStatusElement.textContent = data.gas_status;
+            rgbColorElement.textContent = data.rgb_color;
+            colorBoxElement.style.backgroundColor = data.rgb_color;
+
+            const lightValue = data.light_value;
+            const gaugePercentage = ((lightValue - 800) / (1024 - 800)) * 100;
+            gaugeBarElement.style.width = `${gaugePercentage}%`;
+
+            if (data.gas_status === "Alert!!") {
+                gasStatusElement.style.backgroundColor = "red";
+            } else {
+                gasStatusElement.style.backgroundColor = "green";
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket connection closed');
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        document.getElementById('rgb-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const r = document.getElementById('r').value;
+            const g = document.getElementById('g').value;
+            const b = document.getElementById('b').value;
+
+            const response = await fetch('/set_rgb', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ r, g, b })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                rgbColorElement.textContent = result.color;
+                colorBoxElement.style.backgroundColor = result.color;
+            } else {
+                alert('Failed to set RGB color');
+            }
+        });
+    </script>
+</body>
+</html>
