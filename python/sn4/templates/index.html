@@ -75,7 +75,7 @@
         const colorBoxElement = document.getElementById('color_box');
         const gaugeBarElement = document.getElementById('gauge-bar');
 
-        const ws = new WebSocket('ws://192.168.0.1:5000/ws');
+        const ws = new WebSocket('ws://' + window.location.host + '/ws');
 
         ws.onopen = () => {
             console.log('WebSocket connection established');

@@ -118,10 +118,16 @@ async def ws():
     try:
         while True:
             await websocket.receive()
-    except:
-        pass
+    except Exception as e:
+        print(f"WebSocket error: {e}")
     finally:
         clients.remove(websocket._get_current_object())
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    from hypercorn.config import Config
+    from hypercorn.asyncio import serve
+
+    config = Config()
+    config.bind = ["192.168.0.2:5000"]
+    asyncio.run(serve(app, config))
+    #app.run(host='192.168.0.2', port=5000, debug=True)

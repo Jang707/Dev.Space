@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "sn4"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+quart = "^0.19.9"
+aiohttp = "^3.11.11"
+hypercorn = "^0.17.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
