@@ -2,6 +2,12 @@ import smbus
 import serial
 import threading
 from time import sleep
+import socketCommunication
+import json
+import logging
+from threading import Lock
+
+logger = logging.getLogger(__name__)
 
 # MPU6050의 datasheet에 나와있는 레지스터 주소 작성. (수정 불필요)
 PWR_MGMT_1 = 0x6B
@@ -39,68 +45,144 @@ def read_raw_data(bus, addr, Device_Address):
         value = value - 65536
     return value
 
+class SensorData:
+    def __init__(self):
+        self.gyro_x = 0.0
+        self.gyro_y = 0.0
+        self.gyro_z = 0.0
+        self.acc_x = 0.0
+        self.acc_y = 0.0
+        self.acc_z = 0.0
+        self.is_dropped = False
+        self.lock = Lock()
+        
+    def update_data(self, gyro_x, gyro_y, gyro_z, acc_x, acc_y, acc_z, is_dropped):
+        with self.lock:
+            self.gyro_x = gyro_x / 131.0  # 변환 계수 적용
+            self.gyro_y = gyro_y / 131.0
+            self.gyro_z = gyro_z / 131.0
+            self.acc_x = acc_x / 16384.0
+            self.acc_y = acc_y / 16384.0
+            self.acc_z = acc_z / 16384.0
+            self.is_dropped = is_dropped
+    
+    def get_data(self):
+        with self.lock:
+            return {
+                'gyro_x': f"{self.gyro_x:.2f}",
+                'gyro_y': f"{self.gyro_y:.2f}",
+                'gyro_z': f"{self.gyro_z:.2f}",
+                'acc_x': f"{self.acc_x:.2f}",
+                'acc_y': f"{self.acc_y:.2f}",
+                'acc_z': f"{self.acc_z:.2f}",
+                'is_dropped': self.is_dropped
+            }
+
 def read_from_pico(ser):
     while True:
         if ser.in_waiting > 0:
             response = ser.readline().decode('utf-8').strip()
+            logger.info(f"[Serial] Pico says: {response}")
             print("Pico says:", response)
 
+
 def main():
-    # 라즈베리파이 피코와의 시리얼 통신 설정
-    ser = serial.Serial('/dev/serial0',9600,timeout=1)
+    sensor_data = SensorData()
+    tcp_client = socketCommunication.TCPClient('192.168.0.2', 12345)
+    
+    # 시리얼 통신 설정
+    ser = serial.Serial('/dev/serial0', 9600, timeout=1)
     ser.flush()
+    logger.info("[Serial] Connected to Pico")
     print("Connected to Pico")
-    # 피코로부터 데이터를 읽는 스레드 시작
+    
+    # 피코 읽기 스레드 시작 (인자 수정)
     thread = threading.Thread(target=read_from_pico, args=(ser,))
     thread.daemon = True
     thread.start()
-    bus = smbus.SMBus(1)  # or bus = smbus.SMBus(0) for older version boards
-    Device_Address = 0x68  # MPU6050 device address
+    
+    bus = smbus.SMBus(1)
+    Device_Address = 0x68
 
     MPU_Init(bus, Device_Address)
-
     print("Reading Data of Gyroscope and Accelerometer")
 
-    # 초기 가속도계 및 자이로스코프 값 저장
-    previous_acc_z = read_raw_data(bus, ACCEL_ZOUT_H, Device_Address)
-    previous_gyro_x = read_raw_data(bus, GYRO_XOUT_H, Device_Address)
-    previous_gyro_y = read_raw_data(bus, GYRO_YOUT_H, Device_Address)
-    previous_gyro_z = read_raw_data(bus, GYRO_ZOUT_H, Device_Address)
+    # TCP 연결 시도 - 연결 실패시 프로그램 종료
+    if not tcp_client.start():
+        logger.error("Failed to establish TCP connection")
+        return
+        
+    def get_sensor_data():
+        """TCP 클라이언트가 호출할 콜백 함수"""
+        return sensor_data.get_data()
+    
+    # 주기적 데이터 전송 시작 (2초 간격)
+    tcp_client.start_periodic_send(get_sensor_data, 2.0)
 
-    while True:
-        # Read Accelerometer raw value
-        acc_x = read_raw_data(bus, ACCEL_XOUT_H, Device_Address)
-        acc_y = read_raw_data(bus, ACCEL_YOUT_H, Device_Address)
-        acc_z = read_raw_data(bus, ACCEL_ZOUT_H, Device_Address)
+    try:
+        # 이전 값 초기화
+        previous_acc_z = read_raw_data(bus, ACCEL_ZOUT_H, Device_Address)
+        previous_gyro_x = read_raw_data(bus, GYRO_XOUT_H, Device_Address)
+        previous_gyro_y = read_raw_data(bus, GYRO_YOUT_H, Device_Address)
+        previous_gyro_z = read_raw_data(bus, GYRO_ZOUT_H, Device_Address)
 
-        # Read Gyroscope raw value
-        gyro_x = read_raw_data(bus, GYRO_XOUT_H, Device_Address)
-        gyro_y = read_raw_data(bus, GYRO_YOUT_H, Device_Address)
-        gyro_z = read_raw_data(bus, GYRO_ZOUT_H, Device_Address)
+        while True:
+            # 센서 데이터 읽기
+            acc_x = read_raw_data(bus, ACCEL_XOUT_H, Device_Address)
+            acc_y = read_raw_data(bus, ACCEL_YOUT_H, Device_Address)
+            acc_z = read_raw_data(bus, ACCEL_ZOUT_H, Device_Address)
+            gyro_x = read_raw_data(bus, GYRO_XOUT_H, Device_Address)
+            gyro_y = read_raw_data(bus, GYRO_YOUT_H, Device_Address)
+            gyro_z = read_raw_data(bus, GYRO_ZOUT_H, Device_Address)
 
-        # 가속도와 자이로스코프 데이터의 변화를 확인하여 센서가 빠르게 떨어지는지 감지
-        acc_z_change = previous_acc_z - acc_z
-        gyro_change = (abs(previous_gyro_x - gyro_x) + abs(previous_gyro_y - gyro_y) + abs(previous_gyro_z - gyro_z))
+            # 낙하 감지
+            acc_z_change = previous_acc_z - acc_z
+            gyro_change = (abs(previous_gyro_x - gyro_x) + 
+                          abs(previous_gyro_y - gyro_y) + 
+                          abs(previous_gyro_z - gyro_z))
+            
+            is_dropped = acc_z_change > 3000 and gyro_change > 500
 
-        # 가속도 Z축 값이 급격히 감소하고 자이로스코프 데이터도 변동이 있으면 피코에 경고 메시지 전송
-        if acc_z_change > 3000 and gyro_change > 500:
-            alert_message = "Alert!! \nsensor is dropped!"
-            ser.write(('alert').encode('utf-8'))
-            print(alert_message)
-            if ser.in_waiting>0:
-                line = ser.readline().decode('utf-8').rstrip()
-                print("Pico says:",line)
+            # SensorData 객체 업데이트
+            sensor_data.update_data(
+                gyro_x=gyro_x,
+                gyro_y=gyro_y,
+                gyro_z=gyro_z,
+                acc_x=acc_x,
+                acc_y=acc_y,
+                acc_z=acc_z,
+                is_dropped=is_dropped
+            )
 
-        # 이전 값을 현재 값으로 업데이트
-        previous_acc_z = acc_z
-        previous_gyro_x = gyro_x
-        previous_gyro_y = gyro_y
-        previous_gyro_z = gyro_z
+            # 낙하 감지시 Pico에 알림
+            if is_dropped:
+                ser.write('alert'.encode('utf-8'))
+                print("Alert!! \nsensor is dropped!")
+                if ser.in_waiting > 0:
+                    line = ser.readline().decode('utf-8').rstrip()
+                    print("Pico says:", line)
 
-        # 센서 데이터 출력
-        print(f"Gx={gyro_x / 131:.2f} °/s\tGy={gyro_y / 131:.2f} °/s\tGz={gyro_z / 131:.2f} °/s\tAx={acc_x / 16384:.2f} g\tAy={acc_y / 16384:.2f} g\tAz={acc_z / 16384:.2f} g")
+            # 이전 값 업데이트
+            previous_acc_z = acc_z
+            previous_gyro_x = gyro_x
+            previous_gyro_y = gyro_y
+            previous_gyro_z = gyro_z
 
-        sleep(0.1)
+            # 센서 데이터 출력
+            print(f"Gx={gyro_x/131:.2f} °/s\tGy={gyro_y/131:.2f} °/s\tGz={gyro_z/131:.2f} °/s\t"
+                  f"Ax={acc_x/16384:.2f} g\tAy={acc_y/16384:.2f} g\tAz={acc_z/16384:.2f} g")
+
+            sleep(0.2)
+
+    except KeyboardInterrupt:
+        print("\nClosing connections...")
+        tcp_client.close()
+        ser.close()
+        
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        tcp_client.close()
+        ser.close()
 
 if __name__ == "__main__":
     main()

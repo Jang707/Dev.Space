@@ -21,17 +21,23 @@ class AutomationManager:
         
     def connect_ssh(self):
         """SSH 연결 설정"""
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect(self.pi4_ip, username=self.pi4_username, password=self.pi4_password)
+        try:
+            print("SSH 연결을 시도합니다.")
+            self.ssh = paramiko.SSHClient()
+            self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh.connect(self.pi4_ip, username=self.pi4_username, password=self.pi4_password)
+        except Exception as e:
+            print(f"ssh 연결 실패 : {e}")
 
     def run_pi4(self):
         """Raspberry Pi 4 실행"""
         try:
+            print("Pi4에 command 입력을 시작합니다.")
             command = (
-                "source /home/devops_r4/senario_2/senario_2_Pi4_venv/activate &&"
+                "source /home/devops_r4/senario_2/senario_2_Pi4_venv/bin/activate &&"
                 "python /home/devops_r4/Dev.Space/python/sn2/Senario_2_Pi4.py"
             )
+            print("Command 입력 완료.")
 
             transport = self.ssh.get_transport()
             channel = transport.open_session()
@@ -142,6 +148,9 @@ def main():
 
         print("Raspberry Pi 4에 연결 중...")
         manager.connect_ssh()
+        time.sleep(2)
+        print("Raspberry Pi 4 설정 시작 중...")
+        manager.setup_pi4()
         time.sleep(5)
         print("Raspberry Pi Pico 설정 중...")
         manager.setup_pico()
