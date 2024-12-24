@@ -71,14 +71,22 @@ void loop() {
     if (currentTime - lastReadTime > 2000) {
       float temperature = dht.readTemperature();
       float humidity = dht.readHumidity();
-      lastReadTime = currentTime;
-      
-      // LCD 업데이트
-      lcd.clear();
-      lcd.setCursor(0,0);
-      lcd.print("Tmp:" + String(temperature));
-      lcd.setCursor(0,1);
-      lcd.print("Humid:" + String(humidity));
+      if (!isnan(temperature) && !isnan(humidity)) {
+        Serial.print("Temperature: ");
+        Serial.println(temperature);
+        Serial.print("Humidity: ");
+        Serial.println(humidity)
+
+        lastReadTime = currentTime;
+        // LCD 업데이트
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Tmp:" + String(temperature));
+        lcd.setCursor(0,1);
+        lcd.print("Humid:" + String(humidity));
+      } else {
+        Serial.println(" 센서 읽기 실패 ");
+      }
     }
   }
 

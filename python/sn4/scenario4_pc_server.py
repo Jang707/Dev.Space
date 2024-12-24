@@ -23,13 +23,20 @@ async def fetch_sensor_data(session, endpoint):
     try:
         async with session.get(f'{arduino_base_url}/{endpoint}') as response:
             if response.status == 200:
-                return await response.json()
+                data = await response.json()
+                print(f"Received {endpoint} data:", data)  # 디버깅용 로그 추가
+                return data
             else:
                 print(f"Error fetching {endpoint}: Status {response.status}")
+                print(f"Response body: {await response.text()}")  # 응답 내용 확인
                 return None
-    except Exception as e:
-        print(f"Exception while fetching {endpoint}: {e}")
+    except aiohttp.ClientError as e:
+        print(f"Network error while fetching {endpoint}: {e}")
         return None
+    except Exception as e:
+        print(f"Unexpected error while fetching {endpoint}: {e}")
+        return None
+    
 async def fetch_sensor_data(session, endpoint):
     async with session.get(f'{arduino_base_url}/{endpoint}') as response:
         if response.status == 200:

@@ -131,11 +131,6 @@ def main():
         manager.setup_pico()
         print("Raspberry Pi Pico 연결 해제 후 다시 연결해주세요.")
         time.sleep(10)
-
-        print("모니터링 서버 시작 중...")
-        manager.start_monitoring_server()
-        print("서버 초기화 대기 중...")
-        time.sleep(5)
         
         print("\n모든 서비스가 시작되었습니다. 종료하려면 Ctrl+C를 누르세요...\n")
         print("Bluetooth 연결은 MAC Address: C8:FD:19:91:14:F8 과 연결하세요.")

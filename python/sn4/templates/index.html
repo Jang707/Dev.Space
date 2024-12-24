@@ -74,47 +74,62 @@
         const rgbColorElement = document.getElementById('rgb_color');
         const colorBoxElement = document.getElementById('color_box');
         const gaugeBarElement = document.getElementById('gauge-bar');
-
-        const ws = new WebSocket('ws://' + window.location.host + '/ws');
-
-        ws.onopen = () => {
-            console.log('WebSocket connection established');
-        };
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            temperatureElement.textContent = data.temperature;
-            humidityElement.textContent = data.humidity;
-            lightValueElement.textContent = data.light_value;
+    
+        function updateUI(data) {
+            temperatureElement.textContent = data.temperature || 'N/A';
+            humidityElement.textContent = data.humidity || 'N/A';
+            lightValueElement.textContent = data.light_value || 'N/A';
             gasStatusElement.textContent = data.gas_status;
             rgbColorElement.textContent = data.rgb_color;
             colorBoxElement.style.backgroundColor = data.rgb_color;
-
-            const lightValue = data.light_value;
-            const gaugePercentage = ((lightValue - 800) / (1024 - 800)) * 100;
-            gaugeBarElement.style.width = `${gaugePercentage}%`;
-
+    
             if (data.gas_status === "Alert!!") {
                 gasStatusElement.style.backgroundColor = "red";
             } else {
                 gasStatusElement.style.backgroundColor = "green";
             }
-        };
-
-        ws.onclose = () => {
-            console.log('WebSocket connection closed');
-        };
-
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
+    
+            if (data.light_value !== "N/A") {
+                const lightValue = parseInt(data.light_value);
+                const gaugePercentage = ((lightValue - 800) / (1024 - 800)) * 100;
+                gaugeBarElement.style.width = `${gaugePercentage}%`;
+            }
+        }
+    
+        function setupWebSocket() {
+            const ws = new WebSocket('ws://' + window.location.host + '/ws');
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                setTimeout(setupWebSocket, 1000);  // 1초 후 재연결 시도
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Received data:', data);  // 디버깅용 로그
+                    updateUI(data);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                }
+            };
+        }
+    
+        // RGB 폼 제어 코드
         document.getElementById('rgb-form').addEventListener('submit', async (event) => {
             event.preventDefault();
             const r = document.getElementById('r').value;
             const g = document.getElementById('g').value;
             const b = document.getElementById('b').value;
-
+    
             const response = await fetch('/set_rgb', {
                 method: 'POST',
                 headers: {
@@ -122,7 +137,7 @@
                 },
                 body: JSON.stringify({ r, g, b })
             });
-
+    
             const result = await response.json();
             if (result.success) {
                 rgbColorElement.textContent = result.color;
@@ -131,6 +146,9 @@
                 alert('Failed to set RGB color');
             }
         });
+    
+        // 초기 WebSocket 연결 시작
+        setupWebSocket();
     </script>
 </body>
 </html>

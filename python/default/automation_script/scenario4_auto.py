@@ -67,17 +67,27 @@ class AutomationManager:
     def start_server(self):
         """시나리오4 서버 시작"""
         try:
-            # 프로젝트 루트 디렉토리 설정
             project_dir = r"D:\Dev.Space\python\sn4"
             server_path = os.path.join(project_dir, "scenario4_pc_server.py")
             
-            self.server_process = subprocess.Popen(
-                ["poetry", "run", "python", server_path],
-                cwd=project_dir,  # 작업 디렉토리 설정
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-                stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE
-            )
+            if os.name == 'nt':
+                # Windows에서 새 프로세스 그룹 생성
+                self.server_process = subprocess.Popen(
+                    ["poetry", "run", "python", server_path],
+                    cwd=project_dir,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE
+                )
+            else:
+                # Unix 계열에서 새 프로세스 그룹 생성
+                self.server_process = subprocess.Popen(
+                    ["poetry", "run", "python", server_path],
+                    cwd=project_dir,
+                    preexec_fn=os.setsid,  # 새 프로세스 그룹 생성
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE
+                )
             time.sleep(2)
             
             if self.server_process.poll() is None:
@@ -99,10 +109,10 @@ class AutomationManager:
     
         for attempt in range(max_retries):
             try:
-                response = requests.get(f"http://localhost:{self.flask_port}/", timeout=5)
+                response = requests.get(f"http://192.168.0.2:{self.flask_port}/", timeout=5)
                 if response.status_code == 200:
                     print("서버가 정상적으로 실행 중입니다.")
-                    print(f"웹 인터페이스 접속 주소: http://localhost:{self.flask_port}")
+                    print(f"웹 인터페이스 접속 주소: http://192.168.0.2:{self.flask_port}")
                     return True
                 else:
                     print(f"서버 응답 코드: {response.status_code}")
@@ -145,16 +155,52 @@ class AutomationManager:
     def cleanup(self):
         """정리 작업 수행"""
         print("정리 작업 시작...")
+        # 포트 사용 프로세스 종료
+        self.check_and_kill_port(self.flask_port)
         
         if self.server_process:
             if os.name == 'nt':
-                subprocess.run(["taskkill", "/F", "/PID", str(self.server_process.pid)],
-                             stderr=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL)
+                # 프로세스 트리 전체를 종료
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.server_process.pid)],
+                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL)
+                
+                # 추가로 Hypercorn 프로세스들도 명시적으로 종료
+                subprocess.run(["taskkill", "/F", "/IM", "hypercorn.exe"],
+                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL)
             else:
-                self.server_process.terminate()
-        
+                # Unix 계열에서는 프로세스 그룹 전체에 시그널 전송
+                os.killpg(os.getpgid(self.server_process.pid), signal.SIGTERM)
+                time.sleep(2)  # 정상 종료 대기
+                os.killpg(os.getpgid(self.server_process.pid), signal.SIGKILL)  # 강제 종료
+                
         print("정리 작업 완료")
+
+    def check_and_kill_port(self, port):
+        """특정 포트를 사용하는 프로세스 종료"""
+        if os.name == 'nt':
+            try:
+                # 포트를 사용하는 프로세스 찾기
+                result = subprocess.run(
+                    f"netstat -ano | findstr :{port}",
+                    shell=True,
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.stdout:
+                    # PID 추출 및 프로세스 종료
+                    for line in result.stdout.split('\n'):
+                        if f":{port}" in line:
+                            pid = line.strip().split()[-1]
+                            subprocess.run(
+                                ["taskkill", "/F", "/PID", pid],
+                                stderr=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL
+                            )
+            except Exception as e:
+                print(f"포트 정리 중 오류 발생: {e}")
 
 def setup_signal_handlers(cleanup_function):
     def signal_handler(signum, frame):
