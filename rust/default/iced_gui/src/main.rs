@@ -461,7 +461,7 @@ impl Application for MonitoringGui {
                 self.dropdown_state.is_expanded = false;
                 let current_time = Local::now().format("[%Y.%m.%d-%H:%M:%S]").to_string();
                 self.log_messages.push(LogMessage {
-                    content: format!("{} Scenario {} is selected.", current_time, choice),
+                    content: format!("{} {} is selected.", current_time, choice),
                     log_type: LogType::Normal
                 });
                 Command::perform(async {}, |_| Message::AutoScroll)
