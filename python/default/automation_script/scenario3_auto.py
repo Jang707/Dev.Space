@@ -30,7 +30,7 @@ class AutomationManager:
         """기존 실행 중인 Flask 서버 프로세스 종료"""
         try:
             stdin, stdout, stderr = self.ssh.exec_command(
-                f"pkill -f 'python.*Senario_3_Pi4.py'"
+                f"pkill python"
             )
             time.sleep(2)
         except Exception as e:

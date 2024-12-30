@@ -29,6 +29,16 @@ class AutomationManager:
         except Exception as e:
             print(f"ssh 연결 실패 : {e}")
 
+    def kill_existing_process(self):
+        """ 기존에 실행중인 Python 프로세스 종료"""
+        try:
+            stdin, stdout, stderr = self.ssh.exec_command(
+                f"pkill python"
+            )
+            time.sleep(2)
+        except Exception as e:
+            print(f"Error killing existing process : {e}")
+
     def run_pi4(self):
         """Raspberry Pi 4 실행"""
         try:
@@ -106,6 +116,8 @@ class AutomationManager:
     def cleanup(self):
         """연결 종료 및 정리"""
         print("정리 작업 시작...")
+        # 기존 프로세스 종료
+        self.kill_existing_process()
         self.stop_event.set()
             
         if self.monitoring_process:

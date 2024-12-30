@@ -14,41 +14,6 @@ class AutomationManager:
         self.monitoring_process = None
         self.stop_event = threading.Event()
 
-    def start_monitoring_server(self):
-        """PC에서 모니터링 서버 실행"""
-        try:
-            monitoring_server_path = r"D:\Dev.Space\rust\default\iced_gui"
-            
-            if not os.path.exists(monitoring_server_path):
-                raise FileNotFoundError(f"경로를 찾을 수 없습니다: {monitoring_server_path}")
-            
-            if not os.path.exists(os.path.join(monitoring_server_path, "Cargo.toml")):
-                raise FileNotFoundError(f"Cargo.toml 파일을 찾을 수 없습니다")
-            
-            print(f"Rust 서버 시작 중...")
-            
-            # 기존 프로세스 종료
-            if os.name == 'nt':
-                subprocess.run(["taskkill", "/F", "/IM", "cargo.exe"], 
-                             stderr=subprocess.DEVNULL, 
-                             stdout=subprocess.DEVNULL)
-            
-            self.monitoring_process = subprocess.Popen(
-                ["cargo", "run"],
-                cwd=monitoring_server_path,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
-            
-            time.sleep(2)
-            if self.monitoring_process.poll() is None:
-                print("모니터링 서버가 성공적으로 시작되었습니다.")
-            else:
-                raise RuntimeError("모니터링 서버 시작 실패")
-                
-        except Exception as e:
-            print(f"모니터링 서버 시작 실패: {e}")
-            raise
-
     def setup_pico(self):
         """Raspberry Pi Pico 설정"""
         try:
@@ -99,9 +64,6 @@ class AutomationManager:
                              stdout=subprocess.DEVNULL)
             else:
                 self.monitoring_process.terminate()
-            
-        if self.ssh:
-            self.ssh.close()
         
         print("정리 작업 완료")
 
