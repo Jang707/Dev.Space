@@ -45,7 +45,7 @@ class AutomationManager:
         """ 별도의 스레드에서 ASUS TinkerBoard 2의 시나리오를 실행합니다."""
         try:
             command = (
-                "python3 /home/linaro/senario_7/senario_7_ASUS.py"
+                "python3 /home/linaro/senario_7/senario_7_ASUS_abnormal.py"
             )
             transport = self.ssh.get_transport()
             channel = transport.open_session()
