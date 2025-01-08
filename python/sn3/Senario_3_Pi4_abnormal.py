@@ -49,6 +49,8 @@ class ServoController:
             self.pwm = GPIO.PWM(self.pin, self.specs.FREQUENCY)
             initial_duty = self._angle_to_duty(90)
             self.pwm.start(initial_duty)
+            #time.sleep(0.5)  # 초기화 안정화 대기
+            #self.pwm.ChangeDutyCycle(0)  # 떨림 방지
             
             self.initialized = True
             logger.info(f"Servo initialized on pin {self.pin} with {self.specs.FREQUENCY}Hz frequency")
@@ -58,13 +60,53 @@ class ServoController:
 
     def _angle_to_duty(self, angle: float) -> float:
         """각도를 duty cycle로 변환"""
+        # 각도 범위 제한
         angle = max(self.specs.MIN_ANGLE, min(self.specs.MAX_ANGLE, angle))
+        
+        # duty cycle 계산
         duty_range = self.specs.MAX_DUTY - self.specs.MIN_DUTY
         duty = self.specs.MIN_DUTY + (angle * duty_range / 180.0)
         return duty
 
+    def _smooth_move(self, target_angle: int) -> bool:
+        """점진적으로 서보 모터 이동"""
+        start_angle = self.current_angle
+        angle_diff = target_angle - start_angle
+        
+        if abs(angle_diff) <= 1:
+            return self._direct_move(target_angle)
+
+        steps = abs(angle_diff)
+        angle_increment = 10 #if angle_diff > 0 else -1
+
+        try:
+            for step in range(steps):
+                current = start_angle + (step * angle_increment)
+                if not self._direct_move(current):
+                    return False
+                time.sleep(self.specs.STEP_DELAY)
+            
+            # 최종 목표 각도로 이동
+            return self._direct_move(target_angle)
+        
+        except Exception as e:
+            logger.error(f"Smooth move failed: {e}")
+            return False
+
+    def _direct_move(self, angle: int) -> bool:
+        """직접 서보 모터 제어"""
+        try:
+            duty = self._angle_to_duty(angle)
+            self.pwm.ChangeDutyCycle(duty)
+            time.sleep(0.1)  # 안정화 대기
+            self.pwm.ChangeDutyCycle(0)  # 떨림 방지
+            return True
+        except Exception as e:
+            logger.error(f"Direct move failed: {e}")
+            return False
+
     def move_to(self, angle: int) -> bool:
-        """서보 모터를 지정된 각도로 즉시 이동"""
+        """서보 모터를 지정된 각도로 이동"""
         if not self.initialized:
             logger.error("Servo not initialized")
             return False
@@ -72,11 +114,24 @@ class ServoController:
         with self.lock:
             try:
                 logger.info(f"Moving servo from {self.current_angle} to {angle} degrees")
-                duty = self._angle_to_duty(angle)
-                self.pwm.ChangeDutyCycle(duty)
-                self.current_angle = angle
-                logger.info(f"Servo moved to {angle} degrees")
-                return True
+                
+                if self._smooth_move(angle):
+                    self.current_angle = angle
+                    self.error_count = 0
+                    logger.info(f"Servo successfully moved to {angle} degrees")
+                    return True
+                
+                self.error_count += 1
+                current_time = time.time()
+                
+                # 에러가 자주 발생하면 재초기화 시도
+                if self.error_count >= 3 and (current_time - self.last_error_time) < 60:
+                    logger.warning("Multiple servo errors detected, attempting reinitialization")
+                    self._initialize_gpio()
+                    self.error_count = 0
+                
+                self.last_error_time = current_time
+                return False
                 
             except Exception as e:
                 logger.error(f"Servo control error: {e}")

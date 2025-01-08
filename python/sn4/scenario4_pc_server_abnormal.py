@@ -1,7 +1,9 @@
 from quart import Quart, render_template, request, jsonify, websocket
 import aiohttp
 import asyncio
-import socketCommunication
+from socketCommunication import TCPClient
+import json
+import threading
 
 app = Quart(__name__)
 
@@ -13,36 +15,32 @@ gas_status = "Normal"
 rgb_color = "#FFFFFF"
 
 # Arduino 서버 주소
-arduino_ip = '192.168.0.8'  # Arduino UNO의 IP 주소
-arduino_port = 80  # Arduino UNO의 포트 번호
+arduino_ip = '192.168.0.8'
+arduino_port = 80
 arduino_base_url = f'http://{arduino_ip}:{arduino_port}'
 
+# TCP 클라이언트 초기화
+tcp_client = TCPClient(server_host='192.168.0.2', server_port=12345)
 clients = []
 
-# 에러 처리
+def send_sensor_data():
+    """센서 데이터를 TCP를 통해 전송하는 함수"""
+    return {
+        'temperature': temperature,
+        'humidity': humidity,
+        'light_value': light_value,
+        'gas_status': gas_status
+    }
+
 async def fetch_sensor_data(session, endpoint):
     try:
         async with session.get(f'{arduino_base_url}/{endpoint}') as response:
             if response.status == 200:
-                data = await response.json()
-                print(f"Received {endpoint} data:", data)  # 디버깅용 로그 추가
-                return data
-            else:
-                print(f"Error fetching {endpoint}: Status {response.status}")
-                print(f"Response body: {await response.text()}")  # 응답 내용 확인
-                return None
-    except aiohttp.ClientError as e:
-        print(f"Network error while fetching {endpoint}: {e}")
-        return None
+                return await response.json()
+            return None
     except Exception as e:
-        print(f"Unexpected error while fetching {endpoint}: {e}")
+        print(f"Error fetching {endpoint}: {e}")
         return None
-    
-async def fetch_sensor_data(session, endpoint):
-    async with session.get(f'{arduino_base_url}/{endpoint}') as response:
-        if response.status == 200:
-            return await response.json()
-    return None
 
 async def read_sensors():
     global temperature, humidity, light_value, gas_status
@@ -56,6 +54,8 @@ async def read_sensors():
             ]
             results = await asyncio.gather(*tasks)
 
+            prev_gas_status = gas_status
+
             if results[0]:
                 temperature = results[0]['temperature']
             if results[1]:
@@ -64,6 +64,10 @@ async def read_sensors():
                 light_value = results[2]['light_value']
             if results[3]:
                 handling_gas(results[3]['gas_status'])
+
+            # Gas 상태가 변경되었을 때 TCP로 전송
+            if prev_gas_status != gas_status:
+                tcp_client.sendmsg({'gas_status': gas_status})
 
             data = {
                 'temperature': temperature,
@@ -86,8 +90,8 @@ def handling_gas(response):
 
 @app.route('/')
 async def index():
-    return await render_template('index.html', temperature=temperature, humidity=humidity, light_value=light_value,
-                                 gas_status=gas_status, rgb_color=rgb_color)
+    return await render_template('index.html', temperature=temperature, humidity=humidity, 
+                               light_value=light_value, gas_status=gas_status, rgb_color=rgb_color)
 
 @app.route('/set_rgb', methods=['POST'])
 async def set_rgb():
@@ -104,6 +108,10 @@ async def set_rgb():
                 result = await response.json()
                 if result.get('success'):
                     rgb_color = f'#{int(r):02x}{int(g):02x}{int(b):02x}'
+                    
+                    # RGB 값이 변경될 때 TCP로 전송
+                    tcp_client.sendmsg({'rgb_color': rgb_color})
+                    
                     data = {'color': rgb_color}
                     for client in clients:
                         await client.send_json(data)
@@ -113,12 +121,16 @@ async def set_rgb():
 
 @app.before_serving
 async def startup():
+    # TCP 클라이언트 시작
+    if tcp_client.start():
+        tcp_client.start_periodic_send(send_sensor_data, 1.0)
     app.sensor_task = asyncio.create_task(read_sensors())
 
 @app.after_serving
 async def shutdown():
     app.sensor_task.cancel()
     await app.sensor_task
+    tcp_client.close()
 
 @app.websocket('/ws')
 async def ws():
@@ -138,4 +150,3 @@ if __name__ == '__main__':
     config = Config()
     config.bind = ["192.168.0.2:5000"]
     asyncio.run(serve(app, config))
-    #app.run(host='192.168.0.2', port=5000, debug=True)

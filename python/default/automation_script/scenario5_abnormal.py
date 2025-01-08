@@ -16,7 +16,7 @@ class AutomationManager:
         """시나리오5 시작"""
         try:
             project_dir = r"D:\Dev.Space\python\sn5"
-            server_path = os.path.join(project_dir, "scenario5_normal.py")
+            server_path = os.path.join(project_dir, "scenario5_abnormal.py")
             
             if os.name == 'nt':
                 # Windows에서 새 프로세스 그룹 생성

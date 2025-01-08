@@ -1,3 +1,4 @@
+# 라즈베리파이와 연결된 블루투스 MAC 주소-> C8:FD:19:91:14:F8
 import machine
 import uasyncio as asyncio
 from machine import Pin, UART, ADC, SPI
@@ -45,6 +46,21 @@ async def read_adc():
             uart.write(data)
         await asyncio.sleep(0.1)
 
+# Bluetooth 통신 처리
+async def bluetooth_communication():
+    global alert_flag
+    while True:
+        if bt_uart.any():
+            data_received = bt_uart.read().decode('utf-8').strip()
+            if data_received == "alert":
+                alert_flag = True
+                display_oled("Alert!!","Alert!!")
+                bt_uart.write("Alert mode activated\n")
+            elif data_received == "monitor":
+                alert_flag = False
+                bt_uart.write("Monitor mode activated\n")
+        await asyncio.sleep(0.1)
+
 # UART 통신 처리
 async def uart_communication():
     global alert_flag
@@ -61,6 +77,7 @@ async def uart_communication():
 async def main():
     await asyncio.gather(
         read_adc(),
+        bluetooth_communication(),
         uart_communication()
     )
 

@@ -1,3 +1,4 @@
+# 라즈베리파이와 연결된 블루투스 MAC 주소-> C8:FD:19:91:14:F8
 import uasyncio as asyncio
 from machine import UART, Pin, Timer, SPI, PWM
 from ssd1306 import SSD1306_SPI
@@ -47,6 +48,28 @@ async def send_status_to_pc():
         
         await asyncio.sleep(0.5)
 
+async def bluetooth_communication():
+    global oled_text, oled_bluetooth, duty
+    while True:
+        if uart_bluetooth.any():
+            try:
+                data_received = uart_bluetooth.read()
+                if data_received is not None:
+                    data_received = data_received.decode('utf-8').strip()  # decode the received data
+                    uart_bluetooth.write(("Echo: " + data_received + "\n").encode())  # echo the received data back
+                    oled_text=data_received
+                    if oled_text == "up":
+                        duty += 50
+                    elif oled_text == "down":
+                        duty -= 50
+                    elif oled_text == "shut down":
+                        duty = 0
+
+                    oled_bluetooth = True # OLED 에 블루투스로 송신받는 데이터를 보이게 함.
+            except UnicodeError:
+                print("Received non-UTF-8 data")
+        await asyncio.sleep(0.1)
+
 #pwm 범위를 제한하기 위한 기능을 추가함.
 async def pwm_led():
     global duty, pwm
@@ -91,6 +114,7 @@ async def oled_display():
 async def main():
     print("Starting main program")
     await asyncio.gather(
+        bluetooth_communication(),
         pwm_led(),
         button_monitor(),
         oled_display(),

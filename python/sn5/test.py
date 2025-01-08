@@ -21,13 +21,11 @@ class AutomationManager:
             if os.name == 'nt':
                 # Windows에서 새 프로세스 그룹 생성
                 self.server_process = subprocess.Popen(
-                    #["poetry", "run", "python", server_path],
-                    ["python", server_path],
+                    ["poetry", "run", "python", server_path],
                     cwd=project_dir,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
                     stderr=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    encoding='cp949' # Windows 한글 환경 대비
+                    stdout=subprocess.PIPE
                 )
             else:
                 # Unix 계열에서 새 프로세스 그룹 생성
@@ -36,16 +34,15 @@ class AutomationManager:
                     cwd=project_dir,
                     preexec_fn=os.setsid,  # 새 프로세스 그룹 생성
                     stderr=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    encoding='utf-8'
+                    stdout=subprocess.PIPE
                 )
-            time.sleep(1)
+            time.sleep(2)
             
             if self.server_process.poll() is None:
                 print("성공적으로 시작되었습니다.")
             else:
-                stderr_output = self.server_process.stderr.read()
-                stdout_output = self.server_process.stdout.read()
+                stderr_output = self.server_process.stderr.read().decode('utf-8')
+                stdout_output = self.server_process.stdout.read().decode('utf-8')
                 error_msg = f"서버 시작 실패\n표준 출력: {stdout_output}\n에러 출력: {stderr_output}"
                 raise RuntimeError(error_msg)
                 
@@ -56,7 +53,9 @@ class AutomationManager:
     def cleanup(self):
         """정리 작업 수행"""
         print("정리 작업 시작...")
-                
+        # 포트 사용 프로세스 종료
+        self.check_and_kill_port(self.flask_port)
+        
         if self.server_process:
             if os.name == 'nt':
                 # 프로세스 트리 전체를 종료
