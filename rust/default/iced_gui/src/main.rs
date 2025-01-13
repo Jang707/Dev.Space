@@ -172,6 +172,17 @@ const CHOICES: [Choice; 8] = [
     Choice::Scenario8,
 ];
 
+const SCENARIO_TEXTS: [&str; 8] = [
+    "1.LED 제어 및 상태 조회 시스템 시나리오",
+    "2.아날로그 데이터 조회 및 출력 시스템 시나리오",
+    "3.디스플레이 온도 센서 제어 시스템 시나리오",
+    "4.UART 시리얼 통신 시스템 시나리오",
+    "5.PLC 모니터링 시스템 시나리오",
+    "6.머신러닝 분류 및 제어 시스템 시나리오",
+    "7.블루투스 및 SPI 통신 시스템 시나리오",
+    "8.이더넷 SCADA 통신 시스템 시나리오",
+];
+
 #[derive(Debug, Clone)]
 enum Message {
     NormalCreation,
@@ -206,6 +217,7 @@ fn py_callback(data: String) {
 
 impl MonitoringGui {
     fn parse_log_type(message: &str) -> LogType {
+        println!("Received message: {}", message);  // 디버깅용 출력 추가
         if message.contains("[Serial]") {
             LogType::Serial
         } else if message.contains("[Server]") {
@@ -549,16 +561,16 @@ impl Application for MonitoringGui {
         };
 
         let button_row = row![
-            button_style("Normal Creation").on_press(Message::NormalCreation),
-            button_style("Abnormal Creation").on_press(Message::AbnormalCreation),
+            button_style("Normal").on_press(Message::NormalCreation),
+            button_style("CVE abnormal").on_press(Message::AbnormalCreation),
             button_style(if self.auto_scroll {"Auto Scroll: ON"} else {"Auto Scroll: OFF"})
                 .on_press(Message::ToggleAutoScroll),
             if self.script_running {
-                button_style("Terminate Scenario")
+                button_style("END scenario")
                     .on_press(Message::TerminateScenario)
             } else {
                 button(
-                    text("Terminate Scenario")
+                    text("End Scenario")
                         .size(16)
                         .style(iced::theme::Text::Color(Color {
                             a: 0.5,
@@ -613,6 +625,7 @@ impl Application for MonitoringGui {
                         text(&message.content)
                             .size(14)
                             .style(iced::theme::Text::Color(text_color))
+                            .font(Font::with_name("Malgun Gothic"))
                     )
                     .width(Length::Fill)
                     .padding(4)
@@ -635,28 +648,32 @@ impl Application for MonitoringGui {
         .id(scrollable::Id::new("log_scroll"));
 
         // Dropdown
+        // build_dropdown 함수 수정
         let build_dropdown = || {
             let selected_text: Element<Message> = text(format!("Selected: {}", self.dropdown_state.selected))
                 .size(16)
                 .style(iced::theme::Text::Color(theme::TEXT))
+                .font(korean_font)
                 .into();
-        
+
             let arrow_text: Element<Message> = text("▼")
                 .size(16)
                 .style(iced::theme::Text::Color(theme::TEXT))
                 .into();
-        
+
             let dropdown_button = button(
                 row![
                     selected_text,
                     arrow_text
                 ]
                 .spacing(10)
+                .width(Length::Fill)
             )
             .style(iced::theme::Button::Custom(Box::new(DropdownButton)))
             .padding([8, 16])
+            .width(Length::Fill)
             .on_press(Message::DropdownToggle);
-        
+
             let dropdown_content = if self.dropdown_state.is_expanded {
                 container(
                     column(
@@ -664,6 +681,7 @@ impl Application for MonitoringGui {
                             let choice_text: Element<Message> = text(choice.to_string())
                                 .size(16)
                                 .style(iced::theme::Text::Color(theme::TEXT))
+                                .font(korean_font)
                                 .into();
                                 
                             button(choice_text)
@@ -675,6 +693,7 @@ impl Application for MonitoringGui {
                         }).collect()
                     )
                     .spacing(2)
+                    .width(Length::Fill)
                 )
                 .style(iced::theme::Container::Custom(Box::new(DropdownList)))
                 .width(Length::Fill)
@@ -682,16 +701,17 @@ impl Application for MonitoringGui {
                 container(column![])
                     .width(Length::Fill)
             };
-        
+
             container(
                 column![
                     dropdown_button,
                     dropdown_content
                 ]
                 .spacing(2)
+                .width(Length::Fill)
             )
             .style(iced::theme::Container::Custom(Box::new(DropdownContainer)))
-            .width(Length::Fixed(200.0))
+            .width(Length::Fixed(600.0))  // 드롭다운 전체 너비 설정
         };
         
         let dropdown_container: Element<Message> = if self.dropdown_state.is_expanded {
@@ -789,11 +809,10 @@ impl button::StyleSheet for DropdownButton {
 
     fn hovered(&self, style: &Self::Style) -> button::Appearance {
         let mut active = self.active(style);
-        active.border_color = Color {
+        active.background = Some(iced::Background::Color(Color {
             a: 0.8,
             ..theme::ACCENT
-        };
-        active.shadow_offset = iced::Vector::new(0.0, 2.0);
+        }));
         active
     }
 }
@@ -842,13 +861,13 @@ impl container::StyleSheet for InactiveIndicator {
 
 impl container::StyleSheet for MonitoringArea {
     type Style = Theme;
-
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
             background: Some(iced::Background::Color(theme::SURFACE)),
             border_width: 1.0,
             border_color: theme::ACCENT, 
             border_radius: 8.0.into(),
+            text_color: Some(theme::TEXT),
             ..Default::default()
         }
     }
@@ -877,6 +896,7 @@ impl container::StyleSheet for LogEntry {
     }
 }
 // for Dropdown
+// DropdownContainer 스타일 수정
 impl container::StyleSheet for DropdownContainer {
     type Style = Theme;
 
@@ -913,7 +933,7 @@ impl button::StyleSheet for DropdownItem {
         button::Appearance {
             background: Some(iced::Background::Color(theme::SURFACE)),
             border_radius: 4.0.into(),
-            border_width: 1.0,
+            border_width: 0.0,
             text_color: theme::TEXT,
             ..Default::default()
         }
@@ -921,12 +941,9 @@ impl button::StyleSheet for DropdownItem {
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(iced::Background::Color(Color {
-                //a: 0.1,
-                ..theme::ACCENT
-            })),
+            background: Some(iced::Background::Color(theme::ACCENT)),
             border_radius: 4.0.into(),
-            border_width: 1.0,
+            border_width: 0.0,
             text_color: theme::TEXT,
             ..Default::default()
         }
@@ -955,18 +972,20 @@ impl Choice {
     }
 }
 
+// 2. Choice enum에 대한 Display trait 구현 수정
 impl Display for Choice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Choice::Scenario1 => write!(f, "Scenario 1"),
-            Choice::Scenario2 => write!(f, "Scenario 2"),
-            Choice::Scenario3 => write!(f, "Scenario 3"),
-            Choice::Scenario4 => write!(f, "Scenario 4"),
-            Choice::Scenario5 => write!(f, "Scenario 5"),
-            Choice::Scenario6 => write!(f, "Scenario 6"),
-            Choice::Scenario7 => write!(f, "Scenario 7"),
-            Choice::Scenario8 => write!(f, "Scenario 8"),
-        }
+        let index = match self {
+            Choice::Scenario1 => 0,
+            Choice::Scenario2 => 1,
+            Choice::Scenario3 => 2,
+            Choice::Scenario4 => 3,
+            Choice::Scenario5 => 4,
+            Choice::Scenario6 => 5,
+            Choice::Scenario7 => 6,
+            Choice::Scenario8 => 7,
+        };
+        write!(f, "{}", SCENARIO_TEXTS[index])
     }
 }
 // Dropdown END
