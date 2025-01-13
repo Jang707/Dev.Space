@@ -1,0 +1,80 @@
+/// 학습모델 공유링크
+const modelURL = "https://teachablemachine.withgoogle.com/models/IEzpsZNsB/";
+const serialPort = "COM3";
+
+let classifier; 
+let serial; 
+let video; 
+let flippedVideo; 
+let label; 
+let actionNum; 
+
+function preload() {
+  //classifier 에 학습모델 할당
+  classifier = ml5.imageClassifier(modelURL + "model.json");
+  serial = new p5.SerialPort();
+}
+
+function setup() {
+  serial.open(serialPort);
+  createCanvas(320, 260);
+  // 비디오 생성
+  video = createCapture(VIDEO);
+  video.size(320, 240);
+  video.hide();
+  flippedVideo = ml5.flipImage(video);
+  //분류시작
+  classifyVideo();
+}
+
+function draw() {
+  //화면에 비디오와 유추한 결과 출력
+  background(0);
+  image(flippedVideo, 0, 0);
+  fill(255);
+  textSize(16);
+  textAlign(CENTER);
+  text(label, width / 2, height - 4);
+}
+
+//분류 함수
+function classifyVideo() {
+  flippedVideo = ml5.flipImage(video);
+  classifier.classify(flippedVideo, gotResult);
+  flippedVideo.remove();
+}
+
+// 분류후 콜백함수
+function gotResult(error, results) {
+  //에러일 경우 console에 출력
+  if (error) {
+    console.error(error);
+    return;
+  }
+  //분류 결과를 label 변수에 할당
+  label = String(results[0].label);
+
+  //분류 결과를 통해 actionNum 할당
+  switch (label) {
+    case "human":
+      actionNum = 1;
+      break;
+    case "Phone":
+      actionNum = 2;
+      break;
+    case "Book":
+      actionNum = 3;
+      break;
+    case "None":
+      actionNum = 4;
+      break;
+    default:
+      break;
+  }
+  //아두이노로 전송
+  serial.write(actionNum);
+  //분류함수 호출
+  classifyVideo();
+}
+
+

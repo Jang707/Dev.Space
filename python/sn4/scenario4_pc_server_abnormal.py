@@ -25,12 +25,8 @@ clients = []
 
 def send_sensor_data():
     """센서 데이터를 TCP를 통해 전송하는 함수"""
-    return {
-        'temperature': temperature,
-        'humidity': humidity,
-        'light_value': light_value,
-        'gas_status': gas_status
-    }
+    message = f"Temperature: {temperature}°C, Humidity: {humidity}%, Light: {light_value}, Gas: {gas_status}"
+    return message
 
 async def fetch_sensor_data(session, endpoint):
     try:

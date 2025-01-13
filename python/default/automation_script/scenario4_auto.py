@@ -12,42 +12,7 @@ class AutomationManager:
         self.flask_port = 5000
         self.server_process = None
         self.stop_event = threading.Event()
-        self.monitoring_process = None
-        
-    def start_monitoring_server(self):
-        """Rust 모니터링 서버 실행"""
-        try:
-            monitoring_server_path = r"D:\Dev.Space\rust\default\iced_gui"
-            
-            if not os.path.exists(monitoring_server_path):
-                raise FileNotFoundError(f"경로를 찾을 수 없습니다: {monitoring_server_path}")
-            
-            if not os.path.exists(os.path.join(monitoring_server_path, "Cargo.toml")):
-                raise FileNotFoundError(f"Cargo.toml 파일을 찾을 수 없습니다")
-            
-            print(f"Rust 서버 시작 중...")
-            
-            # 기존 프로세스 종료
-            if os.name == 'nt':
-                subprocess.run(["taskkill", "/F", "/IM", "cargo.exe"], 
-                             stderr=subprocess.DEVNULL, 
-                             stdout=subprocess.DEVNULL)
-            
-            self.monitoring_process = subprocess.Popen(
-                ["cargo", "run"],
-                cwd=monitoring_server_path,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
-            
-            time.sleep(2)
-            if self.monitoring_process.poll() is None:
-                print("모니터링 서버가 성공적으로 시작되었습니다.")
-            else:
-                raise RuntimeError("모니터링 서버 시작 실패")
-                
-        except Exception as e:
-            print(f"모니터링 서버 시작 실패: {e}")
-            raise
+
 
     def upload_wemos_code(self):
         """WeMos 코드 업로드"""
@@ -132,7 +97,9 @@ class AutomationManager:
             ports = serial.tools.list_ports.comports()
             print("Looking for Raspberry pi pico...")
             
+            # 1. 포트 상세 정보 출력 추가
             for port in ports:
+                print(f"Found port: {port.device} - {port.description} - {port.hwid}")
                 if "2E8A:0005" in port.hwid:
                     print(f"Found Pico on port : {port}")
                     pico_port = port.device
@@ -141,13 +108,27 @@ class AutomationManager:
             if not pico_port:
                 raise Exception("Pico 장치를 찾을 수 없습니다.")
             
-            time.sleep(1)
-            print(f"ampy put to : {pico_port}")
-            os.system(f"python -m ampy.cli --port {pico_port} put {pico_main}")
+            # 2. 포트 사용 가능 여부 확인
+            try:
+                with serial.Serial(pico_port, 115200, timeout=1) as ser:
+                    print(f"Port {pico_port} is available")
+            except serial.SerialException as e:
+                print(f"Port {pico_port} is in use or inaccessible: {e}")
+                raise
+
+            # 3. 대기 시간 증가
+            time.sleep(2)
+            
+            # 4. ampy 명령 실행 전 상세 로깅 추가
+            print(f"Uploading {pico_main} to {pico_port}")
+            result = os.system(f"python -m ampy.cli --port {pico_port} put {pico_main}")
+            
+            if result != 0:
+                raise Exception(f"ampy command failed with exit code: {result}")
             
             print("Raspberry pi pico successfully configured and running")
             return True
-            
+                
         except Exception as e:
             print(f"Pico 설정 실패: {e}")
             raise

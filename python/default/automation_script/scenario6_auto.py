@@ -45,7 +45,8 @@ class ASUS_AutomationManager:
         """ 별도의 스레드에서 ASUS TinkerBoard 2의 시나리오를 실행합니다."""
         try:
             command = (
-                "python3 /home/linaro/senario_7/senario_7_ASUS.py"
+                "source /home/linaro/senario_6/senario_6_Pi4_venv/bin/activate &&"
+                "python /home/linaro/senario_6/default/senario_6_ASUS.py"
             )
             transport = self.ssh.get_transport()
             channel = transport.open_session()
@@ -77,94 +78,6 @@ class ASUS_AutomationManager:
             self.kill_existing_process()
             self.asus_thread.join(timeout=5)
 
-        if self.ssh:
-            self.ssh.close()
-        
-        print("정리 작업 완료")
-
-class RASPBERRY_AutomationManager:
-    def __init__(self, pi4_ip, pi4_username, pi4_password):
-        self.pi4_ip = pi4_ip
-        self.pi4_username = pi4_username
-        self.pi4_password = pi4_password
-        self.ssh = None
-        self.flask_port = 8000
-        self.stop_event = threading.Event()
-        self.flask_thread = None
-        
-    def connect_ssh(self):
-        """SSH 연결 설정"""
-        self.ssh = paramiko.SSHClient()
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.ssh.connect(self.pi4_ip, username=self.pi4_username, password=self.pi4_password)
-
-    def kill_existing_flask(self):
-        """기존 실행 중인 Flask 서버 프로세스 종료"""
-        try:
-            stdin, stdout, stderr = self.ssh.exec_command(
-                f"pkill python"
-            )
-            time.sleep(2)
-        except Exception as e:
-            print(f"Error killing existing Flask process: {e}")
-
-    def run_flask_server(self):
-        """Flask 서버를 별도 스레드에서 실행"""
-        try:
-            command = (
-                "source /home/devops_r4/senario_6/venv_senario_6_Pi4/bin/activate && "
-                "python /home/devops_r4/senario_6/Senario_6_Pi4.py"
-            )
-            
-            transport = self.ssh.get_transport()
-            channel = transport.open_session()
-            channel.exec_command(command)
-            
-            while not self.stop_event.is_set():
-                if channel.exit_status_ready():
-                    break
-                time.sleep(1)
-                
-        except Exception as e:
-            print(f"Flask 서버 실행 중 오류 발생: {e}")
-            self.stop_event.set()
-
-    def setup_pi4(self):
-        """Raspberry Pi 4 설정 및 서버 실행"""
-        try:
-            self.kill_existing_flask()
-            print("ssh command 실행 시작")
-            
-            # Flask 서버를 별도 스레드에서 실행
-            self.flask_thread = threading.Thread(target=self.run_flask_server)
-            self.flask_thread.daemon = True  # 메인 스레드 종료시 같이 종료되도록 설정
-            self.flask_thread.start()
-            
-            # 서버 시작 대기
-            time.sleep(5)
-            print("Flask 서버 스레드가 시작되었습니다.")
-            
-        except Exception as e:
-            print(f"Raspberry Pi 4 설정 실패: {e}")
-            raise
-
-    def cleanup(self):
-        """연결 종료 및 정리"""
-        print("정리 작업 시작...")
-        self.stop_event.set()
-        
-        if self.flask_thread and self.flask_thread.is_alive():
-            self.kill_existing_flask()
-            self.flask_thread.join(timeout=5)
-            
-        if self.monitoring_process:
-            if os.name == 'nt':
-                subprocess.run(["taskkill", "/F", "/PID", str(self.monitoring_process.pid)],
-                             stderr=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL)
-            else:
-                self.monitoring_process.terminate()
-            
         if self.ssh:
             self.ssh.close()
         
@@ -214,12 +127,6 @@ def main():
     asus_manager = ASUS_AutomationManager(ASUS_IP, ASUS_USERNAME, ASUS_PASSWORD)
     setup_signal_handlers(asus_manager.cleanup)
 
-    PI4_IP = "192.168.0.4"
-    PI4_USERNAME = "devops_r4"
-    PI4_PASSWORD = "dbspt!23"
-    rasp_manager = RASPBERRY_AutomationManager(PI4_IP, PI4_USERNAME, PI4_PASSWORD)
-    setup_signal_handlers(rasp_manager.cleanup)
-
     wemos_manager = WEMOS_AutomationManager()
     
     try:
@@ -229,14 +136,6 @@ def main():
 
         print("ASUS Tinker Board 2 서비스 시작 중...")
         asus_manager.setup_asus()
-        time.sleep(2)
-
-        print("Raspberry Pi 4 에 연결 중...")
-        rasp_manager.connect_ssh()
-        time.sleep(2)
-
-        print("Raspberry Pi 4 서버 시작 중...")
-        rasp_manager.setup_pi4
         time.sleep(2)
 
         print("WeMos 코드 업로드 중...")

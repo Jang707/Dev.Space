@@ -1,0 +1,5 @@
+1. p5.js Web Editor 로 이동. URL : https://editor.p5js.org/
+2. web editor 에서 index.html, sketch.js 에 각기 텍스트 붙여넣기
+3. Servo_Control_Listener 를 Arduino 에 컴파일
+4. p5.serialcontrol-win32-x64 폴더 안의 "p5.serialcontrol.exe" 실행 후 arduino uno 에 해당하는 포트를 지정후 open 버튼 클릭
+5. web editor 에서 파일 실행.

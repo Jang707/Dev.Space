@@ -75,7 +75,7 @@ void loop() {
         Serial.print("Temperature: ");
         Serial.println(temperature);
         Serial.print("Humidity: ");
-        Serial.println(humidity)
+        Serial.println(humidity);
 
         lastReadTime = currentTime;
         // LCD 업데이트

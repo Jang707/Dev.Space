@@ -186,6 +186,7 @@ class TCPClient:
         - 메시지 직렬화 처리
         - 전송 실패 처리
         """
+        print(f"Sending message: {message}")  # 디버깅용 출력 추가
         if not self.is_connected:
             logger.error("Cannot send message: Not connected")
             return
