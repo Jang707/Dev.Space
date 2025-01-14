@@ -137,11 +137,8 @@ def main():
 
             # 낙하 감지
             acc_z_change = previous_acc_z - acc_z
-            gyro_change = (abs(previous_gyro_x - gyro_x) + 
-                          abs(previous_gyro_y - gyro_y) + 
-                          abs(previous_gyro_z - gyro_z))
             
-            is_dropped = acc_z_change > 3000 and gyro_change > 500
+            is_dropped = acc_z_change > 3000
 
             # SensorData 객체 업데이트
             sensor_data.update_data(

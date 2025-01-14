@@ -95,7 +95,6 @@ def main():
         time.sleep(10)
         
         print("\n모든 서비스가 시작되었습니다. 종료하려면 Ctrl+C를 누르세요...\n")
-        print("Bluetooth 연결은 MAC Address: C8:FD:19:91:14:F8 과 연결하세요.")
         # 메인 루프
         while True:
             time.sleep(1)
