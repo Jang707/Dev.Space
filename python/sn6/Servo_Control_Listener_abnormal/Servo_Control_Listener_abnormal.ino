@@ -12,21 +12,21 @@ void loop() {
     // 웹에서 보낸 값에 따라 서보모터 각도를 변경해 줍니다
     switch (actionCode) {
       case 1 :
-        servoAngle = 180;
+        servoAngle = 110;
         //servoAngle = 180; 
         Serial.println("case 1 detected");
         servo.write(servoAngle);
         delay(1000);
         break;
       case 2 :
-        servoAngle = 120;
+        servoAngle = 100;
         //servoAngle = 120;
         Serial.println("case 2 detected");
         servo.write(servoAngle);
         delay(1000);
         break;
       case 3 :
-        servoAngle = 60;
+        servoAngle = 180;
         //servoAngle = 60;
         Serial.println("case 3 detected");
         servo.write(servoAngle);

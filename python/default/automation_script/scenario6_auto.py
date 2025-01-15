@@ -64,7 +64,7 @@ class ASUS_AutomationManager:
         """기존 실행중인 프로세스를 종료합니다."""
         try:
             stdin, stdout, stderr = self.ssh.exec_command(
-                f"pkill -f 'python.*senario_7_ASUS.py'"
+                f"pkill -f 'python.*senario_6_ASUS.py'"
             ) 
         except Exception as e:
             print(f"Error killing existing process: {e}")
@@ -88,7 +88,7 @@ class WEMOS_AutomationManager :
         """WeMos 코드 업로드"""
         try:
             #upload_script_path = os.path.join("..", "wemos_scenario4_upload.py")
-            upload_script_path = "D:\Dev.Space\python\default\wemos_scenario4_upload.py"
+            upload_script_path = "D:\Dev.Space\python\default\wemos_scenario6_upload.py"
             result = subprocess.run(["python", upload_script_path], 
                                  capture_output=True, 
                                  text=True)
