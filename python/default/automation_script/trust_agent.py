@@ -89,7 +89,7 @@ def main():
     # 프로세스 이름 설정 (Windows only)
     if platform.system() == 'Windows':
         import ctypes
-        ctypes.windll.kernel32.SetConsoleTitleW("Trust_Agent")
+        ctypes.windll.kernel32.SetConsoleTitleW("TRUST_IOT")
     
     # 시스템 정보 수집
     print("시스템 정보를 수집합니다...")
