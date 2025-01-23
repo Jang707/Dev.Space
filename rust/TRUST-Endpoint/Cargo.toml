@@ -1,0 +1,16 @@
+[package]
+name = "TRUST-Endpoint"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iced_renderer = {version = "0.13", features = ["wgpu"]}
+iced = { version = "0.10.0", features = ["tokio", "default", "wgpu"]}
+tokio = { version = "1.0", features = ["full"] }
+pyo3 = { version = "0.19", features = ["auto-initialize"] }
+chrono = "0.4"
+lazy_static = "1.4"
+serialport = "4.2"
+serde_json = "1.0"
+iced_aw = {version = "0.11", features = ["drop_down"]}
+unicode-width = "0.1.10"

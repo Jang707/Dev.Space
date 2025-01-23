@@ -62,34 +62,12 @@ def get_resource_path(relative_path):
     print(f"디버그: 리소스 경로 = {resolved_path}")
     return resolved_path
 
-def run_scenario(scenario_num, mode):
-    """시나리오 실행 함수"""
-    mode_str = 'auto' if mode == '1' else 'abnormal'
-    scenario_file = f"scenario{scenario_num}_{mode_str}.py"
-    scenario_path = get_resource_path(scenario_file)
-    
-    print(f"디버그: 실행할 시나리오 파일 = {scenario_path}")
-    if os.path.exists(scenario_path):
-        try:
-            print(f"시나리오 {scenario_file} 실행 중...")
-            subprocess.run([sys.argv[0], scenario_path], check=True)
-            input("시나리오 실행이 완료되었습니다. 아무 키나 눌러서 종료하세요...")
-            sys.exit(0)
-        except subprocess.CalledProcessError as e:
-            print(f"시나리오 실행 중 오류가 발생했습니다: {e}")
-            input("아무 키나 눌러서 종료하세요...")
-            sys.exit(1)
-    else:
-        print(f"오류: {scenario_file}을 찾을 수 없습니다.")
-        input("아무 키나 눌러서 종료하세요...")
-        sys.exit(1)
-
 def main():
     """메인 함수"""
     # 프로세스 이름 설정 (Windows only)
     if platform.system() == 'Windows':
         import ctypes
-        ctypes.windll.kernel32.SetConsoleTitleW("TRUST_IOT")
+        ctypes.windll.kernel32.SetConsoleTitleW("TRUST_endpoint")
     
     # 시스템 정보 수집
     print("시스템 정보를 수집합니다...")
@@ -102,22 +80,5 @@ def main():
     if save_choice == 'y':
         save_info(collected_info)
     
-    # 시나리오 선택
-    while True:
-        scenario = input("\n실행할 시나리오를 입력해주세요 (1-8): ")
-        if scenario.isdigit() and 1 <= int(scenario) <= 8:
-            break
-        print("1부터 8까지의 숫자를 입력해주세요.")
-    
-    # 모드 선택
-    while True:
-        mode = input("\nNormal (1), Abnormal (2) 중 원하는 기능의 숫자를 입력해주세요: ")
-        if mode in ['1', '2']:
-            break
-        print("1 또는 2를 입력해주세요.")
-    
-    # 선택된 시나리오 실행
-    run_scenario(scenario, mode)
-
 if __name__ == "__main__":
     main()
