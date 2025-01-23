@@ -59,10 +59,9 @@
             background-color: #00a9c7;
             color: white;
             border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 24px;
+            border-radius: 8px;  /* 원형에서 둥근 사각형으로 변경 */
+            padding: 10px 15px;  /* 텍스트를 위한 여백 추가 */
+            font-size: 16px;     /* 글자 크기 조정 */
             cursor: pointer;
             transition: background-color 0.3s;
             text-decoration: none;
@@ -153,9 +152,9 @@
 
         <div class="card">
             <div class="servo-control">
-                <a href="sg90_control_act?servo=L" class="servo-button">&lt;</a>
+                <a href="sg90_control_act?servo=L" class="servo-button">시계방향</a>
                 <img src="static/sg90.png" alt="SG90 Servo" class="servo-image">
-                <a href="sg90_control_act?servo=R" class="servo-button">&gt;</a>
+                <a href="sg90_control_act?servo=R" class="servo-button">반시계방향</a>
             </div>
             <div class="degree">Degree: {{ degree }}°</div>
         </div>
